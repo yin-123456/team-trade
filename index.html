@@ -124,26 +124,30 @@
         </select>
       </div>
       <div class="tf-group">
-        <button class="tf-btn active">1分</button>
-        <button class="tf-btn">5分</button>
-        <button class="tf-btn">15分</button>
-        <button class="tf-btn">1时</button>
-        <button class="tf-btn">4时</button>
-        <button class="tf-btn">1日</button>
+        <button class="tf-btn active" data-tf="1分">1分</button>
+        <button class="tf-btn" data-tf="5分">5分</button>
+        <button class="tf-btn" data-tf="15分">15分</button>
+        <button class="tf-btn" data-tf="1时">1时</button>
+        <button class="tf-btn" data-tf="4时">4时</button>
+        <button class="tf-btn" data-tf="1日">1日</button>
       </div>
+    </div>
+    <div class="ind-group">
+      <span class="ind-label">指标</span>
+      <button class="ind-btn active" data-ind="ma7">MA7</button>
+      <button class="ind-btn active" data-ind="ma25">MA25</button>
+      <button class="ind-btn" data-ind="boll">BOLL</button>
+      <button class="ind-btn" data-ind="rsi">RSI</button>
+      <button class="ind-btn" data-ind="macd">MACD</button>
     </div>
     <div class="chart-area" id="chartArea">
       <canvas id="klineCanvas"></canvas>
       <div class="chart-overlay">
         <div class="price-row">
-          <span class="price-big" id="priceMain">68,432.50</span>
-          <span class="price-badge up" id="priceChange">+2.34%</span>
+          <span class="price-big" id="priceMain">--</span>
+          <span class="price-change" id="priceChange">--</span>
         </div>
-        <div class="chart-tags">
-          <span class="tag">MA7: 67,890</span>
-          <span class="tag">MA25: 66,540</span>
-          <span class="tag">量: 1.2B</span>
-        </div>
+        <div class="chart-tags" id="chartTags"></div>
       </div>
     </div>
     <div class="vol-bar" id="volumeBar"></div>
@@ -172,10 +176,10 @@
     <div class="card-head">
       <h2 class="card-title">实时动态</h2>
       <div class="filter-group">
-        <button class="filter-btn active">全部</button>
-        <button class="filter-btn">买入</button>
-        <button class="filter-btn">卖出</button>
-        <button class="filter-btn">提醒</button>
+        <button class="filter-btn active" data-filter="all">全部</button>
+        <button class="filter-btn" data-filter="long">买入</button>
+        <button class="filter-btn" data-filter="short">卖出</button>
+        <button class="filter-btn" data-filter="alert">提醒</button>
       </div>
     </div>
     <div class="feed-list" id="signalFeed"></div>
@@ -215,10 +219,10 @@
         <label>数量</label>
         <input type="text" class="input" placeholder="输入数量" id="tradeAmount">
         <div class="pct-row">
-          <button class="pct-btn">25%</button>
-          <button class="pct-btn">50%</button>
-          <button class="pct-btn">75%</button>
-          <button class="pct-btn">全部</button>
+          <button class="pct-btn" data-pct="25">25%</button>
+          <button class="pct-btn" data-pct="50">50%</button>
+          <button class="pct-btn" data-pct="75">75%</button>
+          <button class="pct-btn" data-pct="100">全部</button>
         </div>
       </div>
       <div class="field">
