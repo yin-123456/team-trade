@@ -1,4 +1,5 @@
-// ===== TeamTrade — 核心交互逻辑 =====
+// ===== TeamTrade — 实时行情版 =====
+// 数据源: Binance 公开 WebSocket + REST API（无需 API Key）
 
 var TEAM = [
   { name: '张明', init: 'ZM', color: '#6366f1' },
@@ -9,19 +10,6 @@ var TEAM = [
   { name: '孙婷', init: 'ST', color: '#06b6d4' },
 ];
 
-var SYMBOLS = [
-  { sym: 'BTC/USDT', price: 68432.50, chg: 2.34 },
-  { sym: 'ETH/USDT', price: 3856.20, chg: -1.12 },
-  { sym: 'SOL/USDT', price: 142.85, chg: 5.67 },
-  { sym: 'BNB/USDT', price: 612.30, chg: 0.89 },
-  { sym: 'XRP/USDT', price: 0.6234, chg: -0.45 },
-  { sym: 'ADA/USDT', price: 0.4521, chg: 3.21 },
-  { sym: 'DOGE/USDT', price: 0.1234, chg: -2.10 },
-  { sym: 'AVAX/USDT', price: 38.92, chg: 1.56 },
-  { sym: 'DOT/USDT', price: 7.45, chg: -0.78 },
-  { sym: 'LINK/USDT', price: 14.67, chg: 4.32 },
-];
-
 var STRATS = [
   { name: 'BTC 网格策略', type: '网格交易', pair: 'BTC/USDT', status: 'running', pnl: '+$2,340', trades: 142, progress: 72, bar: 'green' },
   { name: 'ETH 均线突破', type: '均线突破', pair: 'ETH/USDT', status: 'running', pnl: '+$890', trades: 56, progress: 45, bar: 'green' },
@@ -30,32 +18,45 @@ var STRATS = [
   { name: 'DOGE 布林带', type: '布林带', pair: 'DOGE/USDT', status: 'stopped', pnl: '-$67', trades: 12, progress: 15, bar: 'red' },
 ];
 
-var SIGNALS = [
-  { type: 'buy', icon: '▲', text: '张明 买入 BTC/USDT 0.5 BTC @ 68,420' },
-  { type: 'sell', icon: '▼', text: '李薇 卖出 ETH/USDT 2.0 ETH @ 3,860' },
-  { type: 'alert', icon: '⚠', text: 'SOL/USDT 触及布林带上轨 $145.20' },
-  { type: 'buy', icon: '▲', text: '网格策略自动买入 BTC 0.02 @ 68,100' },
-  { type: 'info', icon: 'ℹ', text: 'ETH 均线突破策略 MA7 上穿 MA25' },
-  { type: 'sell', icon: '▼', text: '赵强 平仓 SOL/USDT +$342' },
-  { type: 'alert', icon: '⚠', text: 'BNB/USDT RSI(14) 达到 72.5 超买区' },
-  { type: 'buy', icon: '▲', text: '王浩 加仓 BTC/USDT 做多 0.1 BTC' },
-  { type: 'info', icon: 'ℹ', text: 'MACD金叉策略检测到 BNB 金叉信号' },
-  { type: 'sell', icon: '▼', text: '陈露 止盈 XRP/USDT 做空 +$128' },
-  { type: 'alert', icon: '⚠', text: 'BTC/USDT 1H 成交量异常放大 3.2倍' },
-  { type: 'buy', icon: '▲', text: '孙婷 开仓 ADA/USDT 做多 5000 ADA' },
-];
+var SIGNALS = [];
+
+// ===== 交易对配置 =====
+var SYMBOL_MAP = {
+  'BTC/USDT': 'btcusdt',
+  'ETH/USDT': 'ethusdt',
+  'SOL/USDT': 'solusdt',
+  'BNB/USDT': 'bnbusdt',
+};
+var SYMBOL_LIST = Object.keys(SYMBOL_MAP);
+var currentSymbol = 'BTC/USDT';
+var currentInterval = '1m';
+
+// 时间周期映射
+var TF_MAP = { '1分': '1m', '5分': '5m', '15分': '15m', '1时': '1h', '4时': '4h', '1日': '1d' };
+
+// ===== 实时数据存储 =====
+var tickerData = {};    // { 'BTC/USDT': { price, chg, high, low, vol } }
+var klineData = [];     // 当前交易对的K线
+var depthData = { asks: [], bids: [] };
+
+// WebSocket 连接
+var wsKline = null;
+var wsTicker = null;
+var wsDepth = null;
 
 // ===== 工具函数 =====
 function formatPrice(p) {
+  p = parseFloat(p);
+  if (isNaN(p)) return '--';
   if (p >= 1000) return p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (p >= 1) return p.toFixed(2);
   return p.toFixed(4);
 }
-function randBetween(a, b) { return a + Math.random() * (b - a); }
 function timeAgo(i) {
-  var u = ['刚刚','1分钟前','2分钟前','3分钟前','5分钟前','8分钟前','12分钟前','15分钟前','20分钟前','30分钟前','45分钟前','1小时前'];
+  var u = ['刚刚','1分钟前','2分钟前','3分钟前','5分钟前','8分钟前','12分钟前','15分钟前','20分钟前','30分钟前'];
   return u[i % u.length];
 }
+function randBetween(a, b) { return a + Math.random() * (b - a); }
 
 // ===== 时钟 =====
 function updateClock() {
@@ -66,38 +67,160 @@ function updateClock() {
   document.getElementById('clock').textContent = h + ':' + m + ':' + s;
 }
 
-// ===== 行情滚动条 =====
-function initTicker() {
+// ===== Binance REST: 拉取历史K线 =====
+function fetchKlineHistory(symbol, interval, cb) {
+  var sym = SYMBOL_MAP[symbol] ? SYMBOL_MAP[symbol].toUpperCase() : 'BTCUSDT';
+  var url = 'https://api.binance.com/api/v3/klines?symbol=' + sym + '&interval=' + interval + '&limit=80';
+  fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+    klineData = data.map(function(d) {
+      return { t: d[0], o: parseFloat(d[1]), h: parseFloat(d[2]), l: parseFloat(d[3]), c: parseFloat(d[4]), v: parseFloat(d[5]) };
+    });
+    if (cb) cb();
+  }).catch(function(e) { console.warn('K线历史拉取失败:', e); });
+}
+
+// ===== Binance REST: 拉取所有交易对 24h Ticker =====
+function fetchAllTickers(cb) {
+  var syms = Object.values(SYMBOL_MAP).map(function(s) { return '"' + s.toUpperCase() + '"'; });
+  var url = 'https://api.binance.com/api/v3/ticker/24hr?symbols=[' + syms.join(',') + ']';
+  fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+    data.forEach(function(t) {
+      var key = SYMBOL_LIST.find(function(k) { return SYMBOL_MAP[k] === t.symbol.toLowerCase(); });
+      if (key) {
+        tickerData[key] = {
+          price: parseFloat(t.lastPrice),
+          chg: parseFloat(t.priceChangePercent),
+          high: parseFloat(t.highPrice),
+          low: parseFloat(t.lowPrice),
+          vol: parseFloat(t.volume)
+        };
+      }
+    });
+    if (cb) cb();
+  }).catch(function(e) { console.warn('Ticker拉取失败:', e); });
+}
+
+// ===== WebSocket: 全币种 Ticker 实时推送 =====
+function connectTickerWS() {
+  if (wsTicker) wsTicker.close();
+  var streams = Object.values(SYMBOL_MAP).map(function(s) { return s + '@ticker'; });
+  var url = 'wss://stream.binance.com:9443/stream?streams=' + streams.join('/');
+  wsTicker = new WebSocket(url);
+  wsTicker.onmessage = function(e) {
+    var msg = JSON.parse(e.data);
+    var d = msg.data;
+    if (!d || !d.s) return;
+    var key = SYMBOL_LIST.find(function(k) { return SYMBOL_MAP[k] === d.s.toLowerCase(); });
+    if (!key) return;
+    tickerData[key] = {
+      price: parseFloat(d.c),
+      chg: parseFloat(d.P),
+      high: parseFloat(d.h),
+      low: parseFloat(d.l),
+      vol: parseFloat(d.v)
+    };
+    updateTickerBar();
+    if (key === currentSymbol) updatePriceDisplay();
+  };
+  wsTicker.onclose = function() { setTimeout(connectTickerWS, 3000); };
+}
+
+// ===== WebSocket: K线实时推送 =====
+function connectKlineWS() {
+  if (wsKline) wsKline.close();
+  var sym = SYMBOL_MAP[currentSymbol];
+  var url = 'wss://stream.binance.com:9443/ws/' + sym + '@kline_' + currentInterval;
+  wsKline = new WebSocket(url);
+  wsKline.onmessage = function(e) {
+    var msg = JSON.parse(e.data);
+    var k = msg.k;
+    if (!k) return;
+    var bar = { t: k.t, o: parseFloat(k.o), h: parseFloat(k.h), l: parseFloat(k.l), c: parseFloat(k.c), v: parseFloat(k.v) };
+    // 更新最后一根或追加新K线
+    if (klineData.length && klineData[klineData.length - 1].t === bar.t) {
+      klineData[klineData.length - 1] = bar;
+    } else {
+      klineData.push(bar);
+      if (klineData.length > 80) klineData.shift();
+    }
+    drawKline();
+    drawVolume();
+    // 生成信号
+    if (k.x) pushAutoSignal(bar);
+  };
+  wsKline.onclose = function() { setTimeout(connectKlineWS, 3000); };
+}
+
+// ===== WebSocket: 盘口深度 =====
+function connectDepthWS() {
+  if (wsDepth) wsDepth.close();
+  var sym = SYMBOL_MAP[currentSymbol];
+  var url = 'wss://stream.binance.com:9443/ws/' + sym + '@depth10@100ms';
+  wsDepth = new WebSocket(url);
+  wsDepth.onmessage = function(e) {
+    var msg = JSON.parse(e.data);
+    if (msg.asks && msg.bids) {
+      depthData.asks = msg.asks.map(function(a) { return { p: parseFloat(a[0]), q: parseFloat(a[1]) }; });
+      depthData.bids = msg.bids.map(function(b) { return { p: parseFloat(b[0]), q: parseFloat(b[1]) }; });
+      renderOrderbook();
+    }
+  };
+  wsDepth.onclose = function() { setTimeout(connectDepthWS, 3000); };
+}
+
+// ===== 自动信号生成 =====
+function pushAutoSignal(bar) {
+  var chg = ((bar.c - bar.o) / bar.o * 100).toFixed(2);
+  var member = TEAM[Math.floor(Math.random() * TEAM.length)];
+  var sig;
+  if (parseFloat(chg) > 0.3) {
+    sig = { type: 'buy', icon: '▲', text: member.name + ' 买入 ' + currentSymbol + ' @ ' + formatPrice(bar.c), time: new Date() };
+  } else if (parseFloat(chg) < -0.3) {
+    sig = { type: 'sell', icon: '▼', text: member.name + ' 卖出 ' + currentSymbol + ' @ ' + formatPrice(bar.c), time: new Date() };
+  } else {
+    sig = { type: 'info', icon: 'ℹ', text: currentSymbol + ' K线收盘 ' + formatPrice(bar.c) + ' (' + chg + '%)', time: new Date() };
+  }
+  SIGNALS.unshift(sig);
+  if (SIGNALS.length > 30) SIGNALS.pop();
+  renderSignals();
+}
+
+// ===== 行情滚动条（实时数据驱动） =====
+function updateTickerBar() {
   var track = document.getElementById('tickerTrack');
+  if (!track) return;
   var html = '';
   for (var r = 0; r < 2; r++) {
-    for (var i = 0; i < SYMBOLS.length; i++) {
-      var s = SYMBOLS[i];
-      var cls = s.chg >= 0 ? 'up' : 'down';
-      var sign = s.chg >= 0 ? '+' : '';
+    for (var i = 0; i < SYMBOL_LIST.length; i++) {
+      var key = SYMBOL_LIST[i];
+      var t = tickerData[key] || { price: 0, chg: 0 };
+      var cls = t.chg >= 0 ? 'up' : 'down';
+      var sign = t.chg >= 0 ? '+' : '';
       html += '<span class="ticker-item">' +
-        '<span class="ticker-sym">' + s.sym + '</span>' +
-        '<span class="ticker-price">' + formatPrice(s.price) + '</span>' +
-        '<span class="ticker-chg ' + cls + '">' + sign + s.chg.toFixed(2) + '%</span></span>';
+        '<span class="ticker-sym">' + key + '</span>' +
+        '<span class="ticker-price">' + formatPrice(t.price) + '</span>' +
+        '<span class="ticker-chg ' + cls + '">' + sign + t.chg.toFixed(2) + '%</span></span>';
     }
   }
   track.innerHTML = html;
 }
 
-// ===== K线数据 =====
-var klineData = [];
-function generateKlineData(count) {
-  klineData = [];
-  var price = 68000;
-  for (var i = 0; i < count; i++) {
-    var open = price;
-    var close = open + randBetween(-400, 400);
-    var high = Math.max(open, close) + randBetween(50, 300);
-    var low = Math.min(open, close) - randBetween(50, 300);
-    var vol = randBetween(800, 3000);
-    klineData.push({ o: open, c: close, h: high, l: low, v: vol });
-    price = close;
+// ===== 价格显示更新 =====
+function updatePriceDisplay() {
+  var t = tickerData[currentSymbol];
+  if (!t) return;
+  var pm = document.getElementById('priceMain');
+  var pc = document.getElementById('priceChange');
+  var ob = document.getElementById('obMidPrice');
+  var tp = document.getElementById('tradePrice');
+  if (pm) pm.textContent = formatPrice(t.price);
+  if (pc) {
+    var sign = t.chg >= 0 ? '+' : '';
+    pc.textContent = sign + t.chg.toFixed(2) + '%';
+    pc.className = 'price-badge ' + (t.chg >= 0 ? 'up' : 'down');
   }
+  if (ob) ob.textContent = formatPrice(t.price);
+  if (tp) tp.value = formatPrice(t.price);
 }
 
 // ===== 绘制K线 =====
@@ -140,8 +263,7 @@ function drawKline() {
     var x = pad.left + i * cw + cw / 2;
     var bull = d.c >= d.o;
     var color = bull ? '#22c55e' : '#ef4444';
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = color; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(x, yPos(d.h)); ctx.lineTo(x, yPos(d.l)); ctx.stroke();
     var bTop = yPos(Math.max(d.o, d.c));
     var bBot = yPos(Math.min(d.o, d.c));
@@ -168,17 +290,54 @@ function drawVolume() {
   bar.innerHTML = html;
 }
 
+// ===== 盘口渲染（实时深度数据） =====
+function renderOrderbook() {
+  var asks = document.getElementById('obAsks');
+  var bids = document.getElementById('obBids');
+  var spread = document.getElementById('spreadVal');
+  if (!asks || !bids) return;
+  var maxQ = 0;
+  depthData.asks.forEach(function(a) { if (a.q > maxQ) maxQ = a.q; });
+  depthData.bids.forEach(function(b) { if (b.q > maxQ) maxQ = b.q; });
+  if (!maxQ) maxQ = 1;
+
+  var ahtml = '';
+  var sortedAsks = depthData.asks.slice().sort(function(a, b) { return b.p - a.p; });
+  for (var i = 0; i < sortedAsks.length; i++) {
+    var a = sortedAsks[i];
+    var w = Math.round((a.q / maxQ) * 100);
+    ahtml += '<div class="ob-row"><div class="ob-bg" style="width:' + w + '%"></div>' +
+      '<span class="ob-price">' + formatPrice(a.p) + '</span><span class="ob-amount">' + a.q.toFixed(4) + '</span></div>';
+  }
+
+  var bhtml = '';
+  for (var j = 0; j < depthData.bids.length; j++) {
+    var b = depthData.bids[j];
+    var bw = Math.round((b.q / maxQ) * 100);
+    bhtml += '<div class="ob-row"><div class="ob-bg" style="width:' + bw + '%"></div>' +
+      '<span class="ob-price">' + formatPrice(b.p) + '</span><span class="ob-amount">' + b.q.toFixed(4) + '</span></div>';
+  }
+
+  asks.innerHTML = ahtml;
+  bids.innerHTML = bhtml;
+  if (spread && depthData.asks.length && depthData.bids.length) {
+    var sp = (depthData.asks[0].p - depthData.bids[0].p).toFixed(2);
+    spread.textContent = sp;
+  }
+}
+
 // ===== 团队持仓 =====
 function renderPositions() {
   var el = document.getElementById('positionsList');
   if (!el) return;
-  var pairs = ['BTC/USDT','ETH/USDT','SOL/USDT','BNB/USDT','XRP/USDT','ADA/USDT'];
+  var pairs = SYMBOL_LIST;
   var html = '';
   for (var i = 0; i < TEAM.length; i++) {
     var t = TEAM[i];
     var pair = pairs[i % pairs.length];
-    var pnl = randBetween(-500, 2000);
-    var isUp = pnl >= 0;
+    var td = tickerData[pair];
+    var pnl = td ? (td.chg * randBetween(50, 200)).toFixed(0) : '0';
+    var isUp = parseFloat(pnl) >= 0;
     var size = randBetween(0.01, 5).toFixed(3);
     html += '<div class="member-row">' +
       '<div class="member-left">' +
@@ -187,7 +346,7 @@ function renderPositions() {
         '<div class="member-pair">' + pair + '</div></div>' +
       '</div>' +
       '<div class="member-right">' +
-        '<div class="member-pnl ' + (isUp ? 'up' : 'down') + '">' + (isUp ? '+' : '') + '$' + Math.abs(pnl).toFixed(0) + '</div>' +
+        '<div class="member-pnl ' + (isUp ? 'up' : 'down') + '">' + (isUp ? '+' : '') + '$' + Math.abs(pnl) + '</div>' +
         '<div class="member-size">' + size + '</div>' +
       '</div></div>';
   }
@@ -226,52 +385,20 @@ function renderSignals(filter) {
       '<div><div class="feed-text">' + s.text + '</div>' +
       '<div class="feed-time">' + timeAgo(i) + '</div></div></div>';
   }
+  if (!html) html = '<div style="text-align:center;color:#94a3b8;padding:24px">等待实时信号...</div>';
   el.innerHTML = html;
 }
 
-// ===== 买卖盘口 =====
-function renderOrderbook() {
-  var asks = document.getElementById('obAsks');
-  var bids = document.getElementById('obBids');
-  if (!asks || !bids) return;
-  var base = SYMBOLS[0].price;
-  var ahtml = '', bhtml = '';
-  for (var i = 7; i >= 0; i--) {
-    var ap = base + randBetween(5, 50) * (i + 1);
-    var aa = randBetween(0.1, 3).toFixed(4);
-    var aw = Math.round(randBetween(20, 100));
-    ahtml += '<div class="ob-row"><div class="ob-bg" style="width:' + aw + '%"></div>' +
-      '<span class="ob-price">' + formatPrice(ap) + '</span><span class="ob-amount">' + aa + '</span></div>';
-  }
-  for (var j = 0; j < 8; j++) {
-    var bp = base - randBetween(5, 50) * (j + 1);
-    var ba = randBetween(0.1, 3).toFixed(4);
-    var bw = Math.round(randBetween(20, 100));
-    bhtml += '<div class="ob-row"><div class="ob-bg" style="width:' + bw + '%"></div>' +
-      '<span class="ob-price">' + formatPrice(bp) + '</span><span class="ob-amount">' + ba + '</span></div>';
-  }
-  asks.innerHTML = ahtml;
-  bids.innerHTML = bhtml;
-}
-
-// ===== 价格更新 =====
-function updatePrice() {
-  var s = SYMBOLS[0];
-  var delta = randBetween(-80, 80);
-  s.price += delta;
-  s.chg += randBetween(-0.3, 0.3);
-  var pm = document.getElementById('priceMain');
-  var pc = document.getElementById('priceChange');
-  var ob = document.getElementById('obMidPrice');
-  var tp = document.getElementById('tradePrice');
-  if (pm) pm.textContent = formatPrice(s.price);
-  if (pc) {
-    var sign = s.chg >= 0 ? '+' : '';
-    pc.textContent = sign + s.chg.toFixed(2) + '%';
-    pc.className = 'price-badge ' + (s.chg >= 0 ? 'up' : 'down');
-  }
-  if (ob) ob.textContent = formatPrice(s.price);
-  if (tp) tp.value = formatPrice(s.price);
+// ===== 切换交易对 =====
+function switchSymbol(sym) {
+  currentSymbol = sym;
+  fetchKlineHistory(sym, currentInterval, function() {
+    drawKline();
+    drawVolume();
+  });
+  connectKlineWS();
+  connectDepthWS();
+  updatePriceDisplay();
 }
 
 // ===== 交互绑定 =====
@@ -291,9 +418,14 @@ function initInteractions() {
     btn.addEventListener('click', function() {
       tfBtns.forEach(function(b) { b.classList.remove('active'); });
       btn.classList.add('active');
-      generateKlineData(60);
-      drawKline();
-      drawVolume();
+      var tf = TF_MAP[btn.textContent.trim()];
+      if (tf) {
+        currentInterval = tf;
+        fetchKlineHistory(currentSymbol, tf, function() {
+          drawKline(); drawVolume();
+        });
+        connectKlineWS();
+      }
     });
   });
 
@@ -337,8 +469,7 @@ function initInteractions() {
     btn.addEventListener('click', function() {
       var pcts = { '25%': 0.25, '50%': 0.5, '75%': 0.75, '全部': 1 };
       var pct = pcts[btn.textContent.trim()] || 0.25;
-      var balance = 10000;
-      if (amountInput) amountInput.value = (balance * pct).toFixed(2);
+      if (amountInput) amountInput.value = (10000 * pct).toFixed(2);
     });
   });
 
@@ -362,18 +493,8 @@ function initInteractions() {
   var symSelect = document.getElementById('symbolSelect');
   if (symSelect) {
     symSelect.addEventListener('change', function() {
-      var idx = symSelect.selectedIndex;
-      var s = SYMBOLS[idx];
-      var pm = document.getElementById('priceMain');
-      var pc = document.getElementById('priceChange');
-      if (pm) pm.textContent = formatPrice(s.price);
-      if (pc) {
-        pc.textContent = (s.chg >= 0 ? '+' : '') + s.chg.toFixed(2) + '%';
-        pc.className = 'price-badge ' + (s.chg >= 0 ? 'up' : 'down');
-      }
-      generateKlineData(60);
-      drawKline();
-      drawVolume();
+      var sym = symSelect.options[symSelect.selectedIndex].text;
+      switchSymbol(sym);
     });
   }
 
@@ -383,22 +504,35 @@ function initInteractions() {
 
 // ===== 初始化 =====
 function init() {
-  initTicker();
-  generateKlineData(60);
-  drawKline();
-  drawVolume();
-  renderPositions();
-  renderStrategies();
-  renderSignals();
-  renderOrderbook();
-  initInteractions();
-
+  // 时钟
   setInterval(updateClock, 1000);
   updateClock();
-  setInterval(function() {
-    updatePrice();
-    renderOrderbook();
-  }, 3000);
+
+  // 静态渲染
+  renderStrategies();
+  renderSignals();
+  renderPositions();
+  initInteractions();
+
+  // 拉取初始数据，然后连接 WebSocket
+  fetchAllTickers(function() {
+    updateTickerBar();
+    updatePriceDisplay();
+    renderPositions();
+  });
+
+  fetchKlineHistory(currentSymbol, currentInterval, function() {
+    drawKline();
+    drawVolume();
+  });
+
+  // 启动 WebSocket 实时流
+  connectTickerWS();
+  connectKlineWS();
+  connectDepthWS();
+
+  // 定时刷新持仓（基于实时 ticker 数据）
+  setInterval(renderPositions, 10000);
 }
 
 document.addEventListener('DOMContentLoaded', init);
