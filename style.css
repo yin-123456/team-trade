@@ -2172,3 +2172,28 @@ body {
   animation: shimmer 1.5s infinite;
   border-radius: 4px;
 }
+
+/* ===== Chart Row (成员对比) ===== */
+.chart-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding: 12px 16px;
+}
+.mini-chart-wrap {
+  position: relative;
+}
+.mini-chart-label {
+  font-size: 0.7rem;
+  color: var(--text-3);
+  font-weight: 600;
+  margin-bottom: 4px;
+  text-align: center;
+}
+.mini-chart {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+@media (max-width: 768px) {
+  .chart-row { grid-template-columns: 1fr; }
+}

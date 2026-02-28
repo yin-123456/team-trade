@@ -1870,6 +1870,16 @@ function init() {
   renderInnovGrid();
   renderLeaderboard2();
 
+  // 延迟初始化图表（等DOM渲染完成）
+  setTimeout(function() {
+    initCompareCharts();
+    initLeverageChart();
+    initPnlDistChart();
+    initRiskExposureChart();
+    initDrawdownChart();
+    initLSHistoryChart();
+  }, 500);
+
   // Fetch initial ticker data
   fetchAllTickers(function() {
     updateTickerBar();
@@ -2536,6 +2546,7 @@ function fetchMarketData() {
     .then(function(d) {
       if (d && d[0]) {
         _marketData.longShortRatio = parseFloat(d[0].longShortRatio).toFixed(2);
+        pushLSHistory(_marketData.longShortRatio);
       }
       renderSentimentPanel();
       renderMarketOverview();
@@ -2555,6 +2566,245 @@ function fetchMarketData() {
       renderSentimentPanel();
       renderMarketOverview();
     }).catch(function() {});
+}
+
+// ============================================================
+// 可视化图表集 — TradingView Lightweight Charts
+// ============================================================
+var tvExpChart=null,tvExpSeries=null;
+var tvWrChart=null,tvWrSeries=null;
+var tvRrChart=null,tvRrSeries=null;
+var tvLevChart=null,tvLevSeries=null;
+var tvPnlDistChart=null,tvPnlDistSeries=null;
+var tvRiskExpChart=null,tvRiskExpSeries=null;
+var tvDdChart=null,tvDdSeries=null;
+var tvLSHistChart=null,tvLSHistSeries=null;
+var _lsHistory = [];
+
+var CHART_OPTS = {
+  layout:{background:{type:'solid',color:'transparent'},textColor:'#8a919e',fontSize:10},
+  grid:{vertLines:{color:'rgba(255,255,255,0.03)'},horzLines:{color:'rgba(255,255,255,0.03)'}},
+  rightPriceScale:{borderColor:'rgba(255,255,255,0.06)'},
+  timeScale:{borderColor:'rgba(255,255,255,0.06)',timeVisible:true},
+  crosshair:{mode:0},handleScroll:false,handleScale:false
+};
+
+function mkMiniChart(id, h) {
+  var el = document.getElementById(id);
+  if (!el || el.offsetWidth === 0) return null;
+  return LightweightCharts.createChart(el, Object.assign({}, CHART_OPTS, {
+    width: el.offsetWidth, height: h || 150
+  }));
+}
+
+// ============ 成员收益对比柱状图 ============
+function initCompareCharts() {
+  var journal = loadJournal();
+  var closed = journal.filter(function(e) { return e.status === 'closed'; });
+
+  var expData = [], wrData = [], rrData = [];
+  var baseTime = Math.floor(Date.now() / 1000) - 86400;
+
+  TEAM.forEach(function(m, i) {
+    var metrics = TTA.calcCoreMetrics(m.name);
+    var t = baseTime + i * 86400;
+    if (metrics) {
+      expData.push({time:t, value:metrics.expectancy, color: metrics.expectancy>=0?'rgba(34,197,94,0.8)':'rgba(239,68,68,0.8)'});
+      wrData.push({time:t, value:metrics.winRate*100, color:'rgba(56,189,248,0.8)'});
+      rrData.push({time:t, value:Math.min(metrics.riskReward,5), color:'rgba(167,139,250,0.8)'});
+    } else {
+      expData.push({time:t, value:0, color:'rgba(255,255,255,0.1)'});
+      wrData.push({time:t, value:0, color:'rgba(255,255,255,0.1)'});
+      rrData.push({time:t, value:0, color:'rgba(255,255,255,0.1)'});
+    }
+  });
+
+  // 期望值图
+  if (!tvExpChart) {
+    tvExpChart = mkMiniChart('chartExpectancy', 130);
+    if (tvExpChart) {
+      tvExpSeries = tvExpChart.addHistogramSeries({priceFormat:{type:'price',precision:2}});
+      tvExpChart.timeScale().fitContent();
+    }
+  }
+  if (tvExpSeries) tvExpSeries.setData(expData);
+
+  // 胜率图
+  if (!tvWrChart) {
+    tvWrChart = mkMiniChart('chartWinRate', 130);
+    if (tvWrChart) {
+      tvWrSeries = tvWrChart.addHistogramSeries({priceFormat:{type:'price',precision:1}});
+      tvWrChart.timeScale().fitContent();
+    }
+  }
+  if (tvWrSeries) tvWrSeries.setData(wrData);
+
+  // 盈亏比图
+  if (!tvRrChart) {
+    tvRrChart = mkMiniChart('chartRiskReward', 130);
+    if (tvRrChart) {
+      tvRrSeries = tvRrChart.addHistogramSeries({priceFormat:{type:'price',precision:2}});
+      tvRrChart.timeScale().fitContent();
+    }
+  }
+  if (tvRrSeries) tvRrSeries.setData(rrData);
+}
+
+// ============ 杠杆收益分析图 ============
+function initLeverageChart() {
+  var journal = loadJournal();
+  var closed = journal.filter(function(e) { return e.status === 'closed'; });
+  if (closed.length === 0) return;
+
+  var levBuckets = {};
+  closed.forEach(function(e) {
+    var lev = parseInt(e.leverage) || 1;
+    var key = lev + 'x';
+    if (!levBuckets[key]) levBuckets[key] = {sum:0,count:0,lev:lev};
+    levBuckets[key].sum += (e.pnl || 0);
+    levBuckets[key].count++;
+  });
+
+  var keys = Object.keys(levBuckets).sort(function(a,b){ return levBuckets[a].lev - levBuckets[b].lev; });
+  var baseTime = Math.floor(Date.now()/1000) - 86400;
+  var data = keys.map(function(k,i){
+    var avg = levBuckets[k].sum / levBuckets[k].count;
+    return {time: baseTime + i*86400, value: avg, color: avg>=0?'rgba(34,197,94,0.7)':'rgba(239,68,68,0.7)'};
+  });
+
+  if (!tvLevChart) {
+    tvLevChart = mkMiniChart('chartLeverage', 200);
+    if (tvLevChart) {
+      tvLevSeries = tvLevChart.addHistogramSeries({priceFormat:{type:'price',precision:2}});
+      tvLevChart.timeScale().fitContent();
+    }
+  }
+  if (tvLevSeries && data.length) tvLevSeries.setData(data);
+}
+
+// ============ 盈亏分布图 ============
+function initPnlDistChart() {
+  var journal = loadJournal();
+  var closed = journal.filter(function(e) { return e.status === 'closed'; });
+  if (closed.length === 0) return;
+
+  var sorted = closed.slice().sort(function(a,b){ return (a.pnl||0)-(b.pnl||0); });
+  var baseTime = Math.floor(Date.now()/1000) - 86400;
+  var data = sorted.map(function(e,i){
+    var p = e.pnl || 0;
+    return {
+      time: baseTime + i*86400,
+      value: p,
+      color: p>=0 ? 'rgba(34,197,94,0.7)' : 'rgba(239,68,68,0.7)'
+    };
+  });
+
+  if (!tvPnlDistChart) {
+    tvPnlDistChart = mkMiniChart('chartPnlDist', 200);
+    if (tvPnlDistChart) {
+      tvPnlDistSeries = tvPnlDistChart.addHistogramSeries({
+        priceFormat:{type:'price',precision:2}
+      });
+      tvPnlDistChart.timeScale().fitContent();
+    }
+  }
+  if (tvPnlDistSeries && data.length) tvPnlDistSeries.setData(data);
+}
+
+// ============ 风险敞口分布图 ============
+function initRiskExposureChart() {
+  var journal = loadJournal();
+  var open = journal.filter(function(e) { return e.status === 'open'; });
+  var baseTime = Math.floor(Date.now()/1000) - 86400;
+
+  var data = TEAM.map(function(m, i) {
+    var trades = open.filter(function(e) { return e.member === m.name; });
+    var exposure = 0;
+    trades.forEach(function(e) {
+      exposure += (parseFloat(e.amount)||0) * (parseFloat(e.entryPrice)||0);
+    });
+    return {
+      time: baseTime + i * 86400,
+      value: exposure,
+      color: m.color + 'cc'
+    };
+  });
+
+  if (!tvRiskExpChart) {
+    tvRiskExpChart = mkMiniChart('chartRiskExposure', 200);
+    if (tvRiskExpChart) {
+      tvRiskExpSeries = tvRiskExpChart.addHistogramSeries({
+        priceFormat:{type:'price',precision:0}
+      });
+      tvRiskExpChart.timeScale().fitContent();
+    }
+  }
+  if (tvRiskExpSeries) tvRiskExpSeries.setData(data);
+}
+
+// ============ 回撤曲线图 ============
+function initDrawdownChart() {
+  var journal = loadJournal();
+  var closed = journal.filter(function(e) {
+    return e.status === 'closed';
+  });
+  if (closed.length < 2) return;
+
+  closed.sort(function(a,b) {
+    return new Date(a.closeTime||a.timestamp) - new Date(b.closeTime||b.timestamp);
+  });
+
+  var equity = 100000, peak = equity;
+  var ddData = [];
+
+  closed.forEach(function(e, i) {
+    equity += (e.pnl || 0);
+    if (equity > peak) peak = equity;
+    var dd = peak > 0 ? ((equity - peak) / peak * 100) : 0;
+    var t = Math.floor(new Date(e.closeTime||e.timestamp).getTime()/1000);
+    if (isNaN(t)) t = Math.floor(Date.now()/1000) - (closed.length-i)*3600;
+    ddData.push({ time: t, value: dd });
+  });
+
+  if (!tvDdChart) {
+    tvDdChart = mkMiniChart('chartDrawdown', 200);
+    if (tvDdChart) {
+      tvDdSeries = tvDdChart.addAreaSeries({
+        topColor: 'rgba(239,68,68,0.4)',
+        bottomColor: 'rgba(239,68,68,0.02)',
+        lineColor: 'rgba(239,68,68,0.8)',
+        lineWidth: 2,
+        priceFormat:{type:'price',precision:2}
+      });
+      tvDdChart.timeScale().fitContent();
+    }
+  }
+  if (tvDdSeries && ddData.length) tvDdSeries.setData(ddData);
+}
+
+// ============ 多空比历史趋势 ============
+function initLSHistoryChart() {
+  if (!tvLSHistChart) {
+    tvLSHistChart = mkMiniChart('chartLSHistory', 200);
+    if (tvLSHistChart) {
+      tvLSHistSeries = tvLSHistChart.addLineSeries({
+        color: 'rgba(56,189,248,0.9)',
+        lineWidth: 2,
+        priceFormat:{type:'price',precision:2}
+      });
+    }
+  }
+  if (tvLSHistSeries && _lsHistory.length > 1) {
+    tvLSHistSeries.setData(_lsHistory);
+    tvLSHistChart.timeScale().fitContent();
+  }
+}
+
+function pushLSHistory(ratio) {
+  var t = Math.floor(Date.now() / 1000);
+  _lsHistory.push({ time: t, value: parseFloat(ratio) || 1 });
+  if (_lsHistory.length > 120) _lsHistory.shift();
+  initLSHistoryChart();
 }
 
 // ============ 市场概览卡片 ============

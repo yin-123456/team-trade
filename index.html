@@ -326,14 +326,43 @@
 <!-- ========== Tab 2: 分析 ========== -->
 <div class="tab-panel" id="analysis">
   <div class="tab-inner">
+    <!-- 成员收益对比图 -->
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-head"><h2 class="card-title">📊 成员收益对比</h2></div>
+      <div class="chart-row">
+        <div class="mini-chart-wrap">
+          <div class="mini-chart-label">期望值 ($)</div>
+          <div class="mini-chart" id="chartExpectancy"></div>
+        </div>
+        <div class="mini-chart-wrap">
+          <div class="mini-chart-label">胜率 (%)</div>
+          <div class="mini-chart" id="chartWinRate"></div>
+        </div>
+        <div class="mini-chart-wrap">
+          <div class="mini-chart-label">盈亏比</div>
+          <div class="mini-chart" id="chartRiskReward"></div>
+        </div>
+      </div>
+    </div>
     <div class="tab-grid-2">
       <div class="card">
-        <div class="card-head"><h2 class="card-title">📊 量化仪表盘</h2></div>
+        <div class="card-head"><h2 class="card-title">📈 量化仪表盘</h2></div>
         <div id="quantDashboard"></div>
       </div>
       <div class="card">
         <div class="card-head"><h2 class="card-title">🔥 时段热力图</h2></div>
         <div id="heatmapPanel"></div>
+      </div>
+    </div>
+    <!-- 杠杆收益分析 + 盈亏分布 -->
+    <div class="tab-grid-2">
+      <div class="card">
+        <div class="card-head"><h2 class="card-title">⚖️ 杠杆收益分析</h2></div>
+        <div class="mini-chart" id="chartLeverage" style="height:200px"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2 class="card-title">🎯 盈亏分布</h2></div>
+        <div class="mini-chart" id="chartPnlDist" style="height:200px"></div>
       </div>
     </div>
     <div class="tab-grid-2">
@@ -360,6 +389,16 @@
       <div class="card">
         <div class="card-head"><h2 class="card-title">📦 交易黑匣子</h2></div>
         <div id="blackboxPanel"></div>
+      </div>
+    </div>
+    <div class="tab-grid-2">
+      <div class="card">
+        <div class="card-head"><h2 class="card-title">⚠️ 风险敞口分布</h2></div>
+        <div class="mini-chart" id="chartRiskExposure" style="height:200px"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2 class="card-title">📉 回撤曲线</h2></div>
+        <div class="mini-chart" id="chartDrawdown" style="height:200px"></div>
       </div>
     </div>
   </div>
@@ -426,6 +465,10 @@
     <div class="card" style="margin-top:12px">
       <div class="card-head"><h2 class="card-title">📊 多空力量对比</h2></div>
       <div id="longShortPanel"></div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <div class="card-head"><h2 class="card-title">📈 多空比历史趋势</h2></div>
+      <div class="mini-chart" id="chartLSHistory" style="height:200px"></div>
     </div>
   </div>
 </div><!-- /market -->
