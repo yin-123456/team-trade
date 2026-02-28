@@ -824,7 +824,7 @@ body {
 }
 
 .strat-card.expanded .strat-detail {
-  max-height: 300px;
+  max-height: 500px;
   padding-top: 10px;
   margin-top: 10px;
   border-top-width: 1px;
@@ -834,9 +834,27 @@ body {
   font-weight: 600;
   color: var(--cyan);
   margin-bottom: 4px;
+  font-size: 0.75rem;
 }
 
 .strat-detail-text { color: var(--text-3); }
+
+.strat-rules {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.8;
+  color: var(--text-2);
+}
+
+.strat-backtest {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--green);
+  background: var(--green-soft);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  margin-top: 4px;
+}
 
 /* ===== Feed / Signals ===== */
 .filter-group { display: flex; gap: 2px; }
@@ -1338,6 +1356,74 @@ body {
   line-height: 1.5;
 }
 
+/* ===== Equity Curve ===== */
+.equity-stats {
+  font-size: 0.78rem;
+  font-family: var(--mono);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* ===== Leaderboard ===== */
+.lb-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s;
+}
+.lb-row:hover { background: var(--bg-hover); }
+.lb-rank { width: 24px; text-align: center; font-size: 0.85rem; }
+.lb-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.6rem; font-weight: 700; color: #fff; flex-shrink: 0;
+}
+.lb-name { font-size: 0.82rem; font-weight: 600; color: var(--text); }
+.lb-stat { flex: 1; font-size: 0.72rem; color: var(--text-3); font-family: var(--mono); text-align: right; }
+.lb-pnl { font-family: var(--mono); font-size: 0.82rem; font-weight: 700; min-width: 80px; text-align: right; }
+
+/* ===== Risk Panel ===== */
+.risk-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.risk-row:last-of-type { border-bottom: none; }
+.risk-label { font-size: 0.78rem; color: var(--text-2); }
+.risk-val { font-family: var(--mono); font-size: 0.82rem; font-weight: 700; }
+.risk-warn {
+  padding: 8px 12px;
+  margin-top: 8px;
+  font-size: 0.75rem;
+  border-radius: var(--radius-sm);
+  background: rgba(239,68,68,0.1);
+  color: var(--red);
+  border: 1px solid rgba(239,68,68,0.2);
+}
+
+/* ===== Responsive: Tablet ===== */
+@media (max-width: 1024px) {
+  .main-grid { grid-template-columns: 1fr; }
+  .stats-row { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ===== Responsive: Mobile ===== */
 @media (max-width: 768px) {
   .analytics-stats { grid-template-columns: repeat(3, 1fr); }
+  .stats-row { grid-template-columns: 1fr; }
+  .main-grid { grid-template-columns: 1fr; gap: 12px; }
+  .topbar { padding: 0 12px; }
+  .nav-tabs { gap: 6px; }
+  .nav-tab { font-size: 0.72rem; padding: 6px 10px; }
+  .chart-area { height: 280px; }
+  .trade-grid { grid-template-columns: 1fr; }
+  .ob-grid { grid-template-columns: 1fr; }
+  .journal-grid { grid-template-columns: 1fr; }
+  .pct-btns { flex-wrap: wrap; }
+  .ticker-bar { font-size: 0.7rem; }
 }

@@ -234,14 +234,14 @@
         <label>交易策略</label>
         <select class="input" id="tradeStrategy">
           <option>手动交易</option>
-          <option>均线交叉策略</option>
-          <option>布林带突破策略</option>
-          <option>RSI反转策略</option>
+          <option>200MA趋势跟踪</option>
+          <option>RSI(2)均值回归</option>
+          <option>布林带收缩突破</option>
           <option>MACD趋势策略</option>
+          <option>均线交叉策略</option>
           <option>网格交易策略</option>
-          <option>Fibonacci回撤策略</option>
-          <option>成交量突破策略</option>
-          <option>Ichimoku云图策略</option>
+          <option>Fibonacci回撤</option>
+          <option>3-5-7风控法则</option>
         </select>
       </div>
       <div class="field">
@@ -257,6 +257,28 @@
   </section>
 </main>
 
+<!-- 权益曲线 + 排行榜 -->
+<section class="stats-row" style="margin-top:0">
+  <div class="card" style="grid-column:1/-1">
+    <div class="card-head">
+      <h2 class="card-title">📈 权益曲线</h2>
+      <div class="equity-stats" id="equityStats"></div>
+    </div>
+    <div class="equity-chart" id="equityChart" style="height:220px"></div>
+  </div>
+</section>
+
+<section class="stats-row" style="margin-top:0">
+  <div class="card">
+    <div class="card-head"><h2 class="card-title">🏆 排行榜</h2></div>
+    <div id="leaderboard"></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h2 class="card-title">🛡️ 风控状态</h2></div>
+    <div id="riskPanel"></div>
+  </div>
+</section>
+
 <!-- 交易日志 -->
 <section class="journal-section">
   <div class="card journal-card">
@@ -265,14 +287,14 @@
       <div class="j-filter-group">
         <select class="chip-select" id="journalFilter">
           <option value="all">全部策略</option>
-          <option>均线交叉策略</option>
-          <option>布林带突破策略</option>
-          <option>RSI反转策略</option>
+          <option>200MA趋势跟踪</option>
+          <option>RSI(2)均值回归</option>
+          <option>布林带收缩突破</option>
           <option>MACD趋势策略</option>
+          <option>均线交叉策略</option>
           <option>网格交易策略</option>
-          <option>Fibonacci回撤策略</option>
-          <option>成交量突破策略</option>
-          <option>Ichimoku云图策略</option>
+          <option>Fibonacci回撤</option>
+          <option>3-5-7风控法则</option>
           <option>手动交易</option>
         </select>
         <button class="btn-primary-sm" id="btnExportJournal">导出CSV</button>

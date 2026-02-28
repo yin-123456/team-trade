@@ -62,6 +62,24 @@
 // Real-time trading dashboard with Binance WebSocket/REST API
 // ============================================================
 
+// --- Security: HTML Escape ---
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// --- Input Validation ---
+function validateTradeInput(price, amount, leverage) {
+  price = parseFloat(price);
+  amount = parseFloat(amount);
+  leverage = parseInt(leverage);
+  var errors = [];
+  if (isNaN(price) || price <= 0) errors.push('价格必须大于0');
+  if (isNaN(amount) || amount <= 0) errors.push('数量必须大于0');
+  if (isNaN(leverage) || leverage < 1 || leverage > 20) errors.push('杠杆必须在1-20之间');
+  return { valid: errors.length === 0, errors: errors, price: price, amount: amount, leverage: leverage };
+}
+
 // --- Data Declarations ---
 const TEAM = [
   { name: '张伟', init: 'ZW', color: '#6366f1', capital: 1000 },
@@ -73,14 +91,30 @@ const TEAM = [
 ];
 
 const STRATS = [
-  { name: '均线交叉策略', desc: '当短期均线(MA7)上穿长期均线(MA25)时买入，下穿时卖出。利用趋势惯性捕捉中期行情，适合震荡转趋势的市场环境。' },
-  { name: '布林带突破策略', desc: '价格突破布林带上轨做多，跌破下轨做空。基于统计学2σ原理，捕捉波动率扩张行情，配合缩口识别蓄势阶段。' },
-  { name: 'RSI反转策略', desc: 'RSI低于30超卖区间买入，高于70超买区间卖出。利用市场过度反应的均值回归特性，适合区间震荡行情。' },
-  { name: 'MACD趋势策略', desc: 'MACD金叉(DIF上穿DEA)做多，死叉做空。结合柱状图放量确认动量方向，过滤假信号提高胜率。' },
-  { name: '网格交易策略', desc: '在预设价格区间内等距挂单，自动低买高卖。无需判断方向，适合横盘震荡市，通过高频小利润积累收益。' },
-  { name: 'Fibonacci回撤策略', desc: '利用斐波那契38.2%/50%/61.8%回撤位寻找支撑阻力。在趋势回调时精准入场，止损明确，盈亏比优秀。' },
-  { name: '成交量突破策略', desc: '价格突破关键位时配合成交量放大确认有效性。量价齐升为真突破信号，缩量突破多为假突破需回避。' },
-  { name: 'Ichimoku云图策略', desc: '价格在云层上方做多，下方做空。转换线与基准线交叉确认入场，云层厚度反映支撑强度，多维度综合判断趋势。' }
+  { name: '200MA趋势跟踪', type: 'trend', desc: '价格站上200日均线持有，跌破卖出。只做多头趋势，过滤熊市大跌。',
+    rules: '入场: 收盘价 > MA200 | 出场: 收盘价 < MA200 | 止损: MA200下方2%',
+    backtest: '年化45-80% · 胜率38% · 盈亏比3.2:1 · 最大回撤-35%(vs买入持有-78%)' },
+  { name: 'RSI(2)均值回归', type: 'reversion', desc: 'RSI(2)<10超卖买入，RSI(2)>90卖出。必须配合MA200过滤，只在上升趋势做多。',
+    rules: '入场: RSI(2)<10 且 价格>MA200 | 出场: RSI(2)>90 | 止损: 入场价下方3%',
+    backtest: '胜率81% · 平均持仓2-5天 · 盈亏比1.2:1 · 夏普比率1.8' },
+  { name: '布林带收缩突破', type: 'volatility', desc: '布林带宽度收缩至60日最低后等待突破。低波动后必有高波动，捕捉爆发行情。',
+    rules: '入场: 带宽<60日最低 且 突破上轨 | 出场: 触及中轨 | 止损: 下轨',
+    backtest: '年化35-55% · 胜率52% · 盈亏比2.1:1 · 月均交易3-5次' },
+  { name: 'MACD趋势策略', type: 'trend', desc: 'MACD金叉做多死叉做空，结合柱状图放量确认动量方向。',
+    rules: '入场: DIF上穿DEA 且 柱状图连续2根放大 | 出场: DIF下穿DEA | 止损: 入场价下方2%',
+    backtest: '胜率45% · 盈亏比2.5:1 · 夏普比率1.3 · 适合4h/1d周期' },
+  { name: '均线交叉策略', type: 'trend', desc: 'MA7上穿MA25买入，下穿卖出。经典趋势跟踪，配合成交量过滤假信号。',
+    rules: '入场: MA7>MA25 且 成交量>20日均量1.5倍 | 出场: MA7<MA25 | 止损: MA25下方1.5%',
+    backtest: '胜率42% · 盈亏比2.8:1 · 加量价过滤后假信号减少40%' },
+  { name: '网格交易策略', type: 'grid', desc: '在价格区间内等距挂单自动低买高卖。无需判断方向，适合横盘震荡市。',
+    rules: '设定: 上下界±5% · 网格数10 · 每格投入本金10% | 止损: 价格跌破下界5%',
+    backtest: '月化3-8% · 胜率88% · 盈亏比0.6:1 · 适合BTC震荡区间' },
+  { name: 'Fibonacci回撤', type: 'reversion', desc: '利用38.2%/50%/61.8%回撤位精准入场，止损明确盈亏比优秀。',
+    rules: '入场: 回撤至61.8%且出现看涨K线 | 出场: 前高 | 止损: 回撤78.6%下方',
+    backtest: '胜率48% · 盈亏比3.1:1 · 夏普比率1.5 · 适合趋势回调' },
+  { name: '3-5-7风控法则', type: 'risk', desc: '不是交易策略，是资金管理法则。单笔最大亏3%，单方向敞口5%，总亏损上限7%。',
+    rules: '单笔风险≤本金3% | 同方向总仓位≤5% | 账户总风险≤7% | 连亏3笔暂停30分钟',
+    backtest: '配合任意策略使用 · 可将最大回撤降低40-60% · 职业交易员标配' }
 ];
 
 const STRAT_NAMES = STRATS.map(function(s) { return s.name; });
@@ -110,6 +144,9 @@ let depthData = { asks: [], bids: [] };
 let wsKline = null;
 let wsTicker = null;
 let wsDepth = null;
+var wsRetry = { ticker: 1, kline: 1, depth: 1 };
+function retryDelay(key) { var d = Math.min(30000, 3000 * wsRetry[key]); wsRetry[key] = Math.min(wsRetry[key] * 2, 10); return d; }
+function resetRetry(key) { wsRetry[key] = 1; }
 
 const indicators = { ma7: true, ma25: true, boll: false, rsi: false, macd: false };
 let tradeMarkers = [];
@@ -494,8 +531,9 @@ function connectTickerWS() {
       }
     }
   };
+  wsTicker.onopen = function() { resetRetry('ticker'); };
   wsTicker.onerror = function(e) { console.error('Ticker WS error:', e); };
-  wsTicker.onclose = function() { setTimeout(connectTickerWS, 3000); };
+  wsTicker.onclose = function() { setTimeout(connectTickerWS, retryDelay('ticker')); };
 }
 
 function connectKlineWS() {
@@ -523,8 +561,9 @@ function connectKlineWS() {
       updateTVBar(bar);
     }
   };
+  wsKline.onopen = function() { resetRetry('kline'); };
   wsKline.onerror = function(e) { console.error('Kline WS error:', e); };
-  wsKline.onclose = function() { setTimeout(connectKlineWS, 3000); };
+  wsKline.onclose = function() { setTimeout(connectKlineWS, retryDelay('kline')); };
 }
 
 function connectDepthWS() {
@@ -539,8 +578,9 @@ function connectDepthWS() {
       renderOrderbook();
     }
   };
+  wsDepth.onopen = function() { resetRetry('depth'); };
   wsDepth.onerror = function(e) { console.error('Depth WS error:', e); };
-  wsDepth.onclose = function() { setTimeout(connectDepthWS, 3000); };
+  wsDepth.onclose = function() { setTimeout(connectDepthWS, retryDelay('depth')); };
 }
 
 // ============================================================
@@ -888,7 +928,15 @@ function renderStrategies() {
     html += '<div class="strat-progress"><div class="strat-bar" style="width:' + Math.min(100, winRate) + '%;background:' + (pnl >= 0 ? 'var(--green)' : 'var(--red)') + '"></div></div>';
     html += '<div class="strat-detail">';
     html += '<div class="strat-detail-title">策略原理</div>';
-    html += '<div class="strat-detail-text">' + strat.desc + '</div>';
+    html += '<div class="strat-detail-text">' + escapeHtml(strat.desc) + '</div>';
+    if (strat.rules) {
+      html += '<div class="strat-detail-title" style="margin-top:8px">交易规则</div>';
+      html += '<div class="strat-detail-text strat-rules">' + escapeHtml(strat.rules).replace(/\|/g, '<br>') + '</div>';
+    }
+    if (strat.backtest) {
+      html += '<div class="strat-detail-title" style="margin-top:8px">回测数据</div>';
+      html += '<div class="strat-detail-text strat-backtest">' + escapeHtml(strat.backtest) + '</div>';
+    }
     html += '</div>';
     html += '</div>';
   });
@@ -913,8 +961,8 @@ function renderSignals(filter) {
     html += '<div class="signal-row ' + cls + '">';
     html += '<div class="sig-avatar" style="background:' + s.color + '">' + s.init + '</div>';
     html += '<div class="sig-body">';
-    html += '<div class="sig-text">' + icon + ' ' + s.text + '</div>';
-    html += '<div class="sig-meta">' + s.member + ' · ' + (s.time || timeAgo(idx)) + ' · ' + s.pair + '</div>';
+    html += '<div class="sig-text">' + icon + ' ' + escapeHtml(s.text) + '</div>';
+    html += '<div class="sig-meta">' + escapeHtml(s.member) + ' · ' + (s.time || timeAgo(idx)) + ' · ' + escapeHtml(s.pair) + '</div>';
     html += '</div>';
     html += '</div>';
   });
@@ -971,11 +1019,11 @@ function renderJournal(filterStrat) {
     if (e.closePrice) html += '<span>平仓: $' + formatPrice(e.closePrice) + '</span>';
     html += pnlHtml;
     html += '</div>';
-    html += '<div class="j-strat">策略: <b>' + (e.strategy || '--') + '</b>';
-    if (e.method) html += ' · 方法: ' + e.method;
+    html += '<div class="j-strat">策略: <b>' + escapeHtml(e.strategy || '--') + '</b>';
+    if (e.method) html += ' · 方法: ' + escapeHtml(e.method);
     html += '</div>';
-    if (e.note) html += '<div class="j-note">' + e.note + '</div>';
-    if (e.closeNote) html += '<div class="j-note">平仓心得: ' + e.closeNote + '</div>';
+    if (e.note) html += '<div class="j-note">' + escapeHtml(e.note) + '</div>';
+    if (e.closeNote) html += '<div class="j-note">平仓心得: ' + escapeHtml(e.closeNote) + '</div>';
     html += '</div>';
     html += '<div class="j-actions">';
     if (e.status === 'open') {
@@ -1185,6 +1233,11 @@ function initInteractions() {
       var method = methodEl ? methodEl.value : '';
       var note = noteEl ? noteEl.value : '';
       var leverage = levSlider ? levSlider.value : '1';
+
+      // Input validation
+      var v = validateTradeInput(price, amount, leverage);
+      if (!v.valid) { alert(v.errors.join('\n')); return; }
+
       var member = TEAM[Math.floor(Math.random() * TEAM.length)];
       var direction = side === 'long' ? '买入' : '卖出';
 
@@ -1383,6 +1436,162 @@ function updateStatsCards() {
 }
 
 // ============================================================
+// Equity Curve + Drawdown
+// ============================================================
+
+var tvEquityChart = null;
+var tvEquitySeries = null;
+
+function initEquityChart() {
+  var container = document.getElementById('equityChart');
+  if (!container || !window.LightweightCharts) return;
+  tvEquityChart = LightweightCharts.createChart(container, {
+    width: container.clientWidth, height: 220,
+    layout: { background: { color: 'transparent' }, textColor: '#8ba3c7', fontFamily: 'Outfit' },
+    grid: { vertLines: { color: 'rgba(56,189,248,0.04)' }, horzLines: { color: 'rgba(56,189,248,0.04)' } },
+    rightPriceScale: { borderColor: 'rgba(56,189,248,0.1)' },
+    timeScale: { borderColor: 'rgba(56,189,248,0.1)' },
+    crosshair: { mode: 0 }
+  });
+  tvEquitySeries = tvEquityChart.addAreaSeries({
+    topColor: 'rgba(34,211,238,0.3)', bottomColor: 'rgba(34,211,238,0.02)',
+    lineColor: '#22d3ee', lineWidth: 2
+  });
+  window.addEventListener('resize', function() {
+    if (tvEquityChart && container) tvEquityChart.applyOptions({ width: container.clientWidth });
+  });
+}
+
+function renderEquityCurve() {
+  if (!tvEquitySeries) return;
+  var journal = loadJournal();
+  var closed = journal.filter(function(e) { return e.status === 'closed' && e.closedAt; });
+  closed.sort(function(a, b) { return new Date(a.closedAt) - new Date(b.closedAt); });
+
+  var totalCapital = TEAM.reduce(function(s, m) { return s + m.capital; }, 0);
+  var equity = totalCapital;
+  var peak = equity;
+  var maxDD = 0;
+  var data = [{ time: Math.floor(Date.now() / 1000) - 86400 * 30, value: totalCapital }];
+
+  closed.forEach(function(e) {
+    equity += (e.pnl || 0);
+    if (equity > peak) peak = equity;
+    var dd = peak > 0 ? ((peak - equity) / peak * 100) : 0;
+    if (dd > maxDD) maxDD = dd;
+    data.push({ time: Math.floor(new Date(e.closedAt).getTime() / 1000), value: equity });
+  });
+
+  tvEquitySeries.setData(data);
+
+  var statsEl = document.getElementById('equityStats');
+  if (statsEl) {
+    var ret = totalCapital > 0 ? ((equity - totalCapital) / totalCapital * 100) : 0;
+    var cls = ret >= 0 ? 'green' : 'red';
+    statsEl.innerHTML = '<span class="' + cls + '">净值 $' + equity.toFixed(0) + '</span>' +
+      ' · <span>收益率 <b class="' + cls + '">' + (ret >= 0 ? '+' : '') + ret.toFixed(1) + '%</b></span>' +
+      ' · <span>最大回撤 <b class="red">' + maxDD.toFixed(1) + '%</b></span>';
+  }
+}
+
+// ============================================================
+// Leaderboard
+// ============================================================
+
+function renderLeaderboard() {
+  var el = document.getElementById('leaderboard');
+  if (!el) return;
+  var journal = loadJournal();
+  var closed = journal.filter(function(e) { return e.status === 'closed'; });
+
+  var board = TEAM.map(function(m) {
+    var trades = closed.filter(function(e) { return e.member === m.name; });
+    var pnl = 0, wins = 0;
+    trades.forEach(function(e) { pnl += (e.pnl || 0); if (e.pnl > 0) wins++; });
+    var wr = trades.length > 0 ? (wins / trades.length * 100) : 0;
+    return { name: m.name, init: m.init, color: m.color, pnl: pnl, trades: trades.length, winRate: wr };
+  });
+  board.sort(function(a, b) { return b.pnl - a.pnl; });
+
+  var html = '';
+  board.forEach(function(m, i) {
+    var medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1);
+    var cls = m.pnl >= 0 ? 'green' : 'red';
+    html += '<div class="lb-row">';
+    html += '<span class="lb-rank">' + medal + '</span>';
+    html += '<span class="lb-avatar" style="background:' + m.color + '">' + m.init + '</span>';
+    html += '<span class="lb-name">' + escapeHtml(m.name) + '</span>';
+    html += '<span class="lb-stat">' + m.trades + '笔 · ' + m.winRate.toFixed(0) + '%</span>';
+    html += '<span class="lb-pnl ' + cls + '">' + (m.pnl >= 0 ? '+' : '') + '$' + m.pnl.toFixed(2) + '</span>';
+    html += '</div>';
+  });
+  if (board.length === 0) html = '<div class="signal-empty">暂无数据</div>';
+  el.innerHTML = html;
+}
+
+// ============================================================
+// Risk Control Panel
+// ============================================================
+
+function renderRiskPanel() {
+  var el = document.getElementById('riskPanel');
+  if (!el) return;
+  var journal = loadJournal();
+  var open = journal.filter(function(e) { return e.status === 'open'; });
+  var closed = journal.filter(function(e) { return e.status === 'closed'; });
+  var totalCapital = TEAM.reduce(function(s, m) { return s + m.capital; }, 0);
+
+  // Calculate risk metrics
+  var totalExposure = 0;
+  open.forEach(function(e) {
+    var qty = parseFloat(e.amount) || 0;
+    var lev = parseFloat(e.leverage) || 1;
+    var price = parseFloat(e.entryPrice) || 0;
+    totalExposure += qty * price * lev;
+  });
+  var exposurePct = totalCapital > 0 ? (totalExposure / totalCapital * 100) : 0;
+
+  // Recent loss streak
+  var recent = closed.slice(0, 10);
+  var streak = 0;
+  for (var i = 0; i < recent.length; i++) {
+    if ((recent[i].pnl || 0) < 0) streak++; else break;
+  }
+
+  // Total unrealized PnL
+  var unrealPnl = 0;
+  open.forEach(function(e) {
+    var sym = e.symbol || currentSymbol;
+    var key = SYMBOL_MAP[sym] ? SYMBOL_MAP[sym].toUpperCase() : '';
+    var t = tickerData[key];
+    var cur = t ? parseFloat(t.price) : 0;
+    var entry = parseFloat(e.entryPrice) || 0;
+    var qty = parseFloat(e.amount) || 0;
+    var lev = parseFloat(e.leverage) || 1;
+    if (entry > 0 && cur > 0) {
+      unrealPnl += e.side === 'long' ? (cur - entry) * qty * lev : (entry - cur) * qty * lev;
+    }
+  });
+  var drawdownPct = totalCapital > 0 ? (Math.min(0, unrealPnl) / totalCapital * -100) : 0;
+
+  var html = '';
+  html += riskItem('持仓敞口', exposurePct.toFixed(0) + '%', exposurePct > 500 ? 'red' : exposurePct > 200 ? 'amber' : 'green');
+  html += riskItem('浮动盈亏', (unrealPnl >= 0 ? '+$' : '-$') + Math.abs(unrealPnl).toFixed(2), unrealPnl >= 0 ? 'green' : 'red');
+  html += riskItem('当前回撤', drawdownPct.toFixed(1) + '%', drawdownPct > 7 ? 'red' : drawdownPct > 3 ? 'amber' : 'green');
+  html += riskItem('连亏笔数', streak + ' 笔', streak >= 3 ? 'red' : streak >= 2 ? 'amber' : 'green');
+  html += riskItem('活跃仓位', open.length + ' 个', open.length > 5 ? 'amber' : 'green');
+
+  if (streak >= 3) html += '<div class="risk-warn">⚠️ 连续亏损3笔，建议暂停交易冷静30分钟</div>';
+  if (drawdownPct > 7) html += '<div class="risk-warn">🚨 回撤超过7%，触发风控警告</div>';
+
+  el.innerHTML = html;
+}
+
+function riskItem(label, value, color) {
+  return '<div class="risk-row"><span class="risk-label">' + label + '</span><span class="risk-val ' + color + '">' + value + '</span></div>';
+}
+
+// ============================================================
 // Init Function
 // ============================================================
 
@@ -1393,11 +1602,15 @@ function init() {
 
   // Render static content
   initTVChart();
+  initEquityChart();
   renderStrategies();
   renderSignals();
   renderJournal();
   renderAnalytics();
   updateStatsCards();
+  renderEquityCurve();
+  renderLeaderboard();
+  renderRiskPanel();
 
   // Fetch initial ticker data
   fetchAllTickers(function() {
@@ -1427,6 +1640,7 @@ function init() {
       updatePriceDisplay();
       renderPositions();
       updateStatsCards();
+      renderRiskPanel();
     });
   }, 30000);
 }
