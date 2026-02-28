@@ -73,8 +73,17 @@ const TEAM = [
 ];
 
 const STRATS = [
-  '均线交叉策略', '布林带突破策略', 'RSI反转策略', 'MACD趋势策略', '网格交易策略'
+  { name: '均线交叉策略', desc: '当短期均线(MA7)上穿长期均线(MA25)时买入，下穿时卖出。利用趋势惯性捕捉中期行情，适合震荡转趋势的市场环境。' },
+  { name: '布林带突破策略', desc: '价格突破布林带上轨做多，跌破下轨做空。基于统计学2σ原理，捕捉波动率扩张行情，配合缩口识别蓄势阶段。' },
+  { name: 'RSI反转策略', desc: 'RSI低于30超卖区间买入，高于70超买区间卖出。利用市场过度反应的均值回归特性，适合区间震荡行情。' },
+  { name: 'MACD趋势策略', desc: 'MACD金叉(DIF上穿DEA)做多，死叉做空。结合柱状图放量确认动量方向，过滤假信号提高胜率。' },
+  { name: '网格交易策略', desc: '在预设价格区间内等距挂单，自动低买高卖。无需判断方向，适合横盘震荡市，通过高频小利润积累收益。' },
+  { name: 'Fibonacci回撤策略', desc: '利用斐波那契38.2%/50%/61.8%回撤位寻找支撑阻力。在趋势回调时精准入场，止损明确，盈亏比优秀。' },
+  { name: '成交量突破策略', desc: '价格突破关键位时配合成交量放大确认有效性。量价齐升为真突破信号，缩量突破多为假突破需回避。' },
+  { name: 'Ichimoku云图策略', desc: '价格在云层上方做多，下方做空。转换线与基准线交叉确认入场，云层厚度反映支撑强度，多维度综合判断趋势。' }
 ];
+
+const STRAT_NAMES = STRATS.map(function(s) { return s.name; });
 
 let SIGNALS = [];
 
@@ -665,7 +674,7 @@ function initTVChart() {
 
   tvChart = LightweightCharts.createChart(container, {
     width: container.clientWidth,
-    height: 340,
+    height: 380,
     layout: { background: { color: 'transparent' }, textColor: '#8ba3c7', fontFamily: 'Outfit, sans-serif' },
     grid: { vertLines: { color: 'rgba(56,189,248,0.04)' }, horzLines: { color: 'rgba(56,189,248,0.04)' } },
     crosshair: { mode: 0 },
@@ -853,8 +862,8 @@ function renderStrategies() {
   var journal = loadJournal();
   var html = '';
 
-  // Show each strategy from STRATS, enriched with real journal data
-  STRATS.forEach(function(name) {
+  STRATS.forEach(function(strat) {
+    var name = strat.name;
     var s = stats.find(function(x) { return x.name === name; });
     var openCount = journal.filter(function(e) { return e.strategy === name && e.status === 'open'; }).length;
     var total = s ? s.total : 0;
@@ -866,7 +875,7 @@ function renderStrategies() {
     var pnlCls = pnl >= 0 ? 'green' : 'red';
     var pnlStr = (pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(2);
 
-    html += '<div class="strat-card">';
+    html += '<div class="strat-card" onclick="this.classList.toggle(\'expanded\')">';
     html += '<div class="strat-header">';
     html += '<span class="strat-name">' + name + '</span>';
     html += '<span class="strat-status ' + statusCls + '">' + statusTxt + '</span>';
@@ -877,6 +886,10 @@ function renderStrategies() {
     html += '<span class="' + pnlCls + '">PnL: ' + pnlStr + '</span>';
     html += '</div>';
     html += '<div class="strat-progress"><div class="strat-bar" style="width:' + Math.min(100, winRate) + '%;background:' + (pnl >= 0 ? 'var(--green)' : 'var(--red)') + '"></div></div>';
+    html += '<div class="strat-detail">';
+    html += '<div class="strat-detail-title">策略原理</div>';
+    html += '<div class="strat-detail-text">' + strat.desc + '</div>';
+    html += '</div>';
     html += '</div>';
   });
   el.innerHTML = html;
@@ -1322,12 +1335,51 @@ function initInteractions() {
 
 function updateStatsCards() {
   var overall = calcOverallStats();
+  var journal = loadJournal();
+
+  // 1. Total PnL
   var pnlEl = document.getElementById('totalPnl');
   if (pnlEl) {
     var p = overall.totalPnl;
     pnlEl.textContent = (p >= 0 ? '+$' : '-$') + Math.abs(p).toFixed(2);
     pnlEl.className = 'stat-value ' + (p >= 0 ? 'green' : 'red');
   }
+
+  // 2. Total position value + avg leverage
+  var openTrades = journal.filter(function(e) { return e.status === 'open'; });
+  var totalVal = 0, levSum = 0;
+  openTrades.forEach(function(e) {
+    var sym = e.symbol || currentSymbol;
+    var key = SYMBOL_MAP[sym] ? SYMBOL_MAP[sym].toUpperCase() : '';
+    var t = tickerData[key];
+    var price = t ? parseFloat(t.price) : 0;
+    var qty = parseFloat(e.amount) || 0;
+    totalVal += price * qty;
+    levSum += parseFloat(e.leverage) || 1;
+  });
+  var avgLev = openTrades.length > 0 ? (levSum / openTrades.length).toFixed(1) : '0';
+  var valEl = document.getElementById('totalValue');
+  if (valEl) valEl.textContent = '$' + totalVal.toLocaleString('en-US', {maximumFractionDigits: 0});
+  var levEl = document.getElementById('avgLeverage');
+  if (levEl) levEl.textContent = '平均杠杆 ' + avgLev + 'x';
+
+  // 3. Win rate
+  var wrEl = document.getElementById('winRate');
+  if (wrEl) wrEl.textContent = overall.closedTrades > 0 ? overall.winRate.toFixed(1) + '%' : '--';
+  var tcEl = document.getElementById('tradeCount');
+  if (tcEl) tcEl.textContent = '近30日 · 共 ' + overall.totalTrades + ' 笔';
+
+  // 4. Active members + running strategies
+  var activeNames = {};
+  openTrades.forEach(function(e) { if (e.member) activeNames[e.member] = true; });
+  var amEl = document.getElementById('activeMembers');
+  if (amEl) amEl.innerHTML = Object.keys(activeNames).length + ' <span class="stat-unit">/ ' + TEAM.length + ' 人</span>';
+  var runCount = 0;
+  STRATS.forEach(function(strat) {
+    if (journal.some(function(e) { return e.strategy === strat.name && e.status === 'open'; })) runCount++;
+  });
+  var rsEl = document.getElementById('runningStrats');
+  if (rsEl) rsEl.textContent = runCount + ' 个策略运行中';
 }
 
 // ============================================================
@@ -1352,6 +1404,7 @@ function init() {
     updateTickerBar();
     updatePriceDisplay();
     renderPositions();
+    updateStatsCards();
   });
 
   // Fetch initial K-line data
@@ -1373,6 +1426,7 @@ function init() {
       updateTickerBar();
       updatePriceDisplay();
       renderPositions();
+      updateStatsCards();
     });
   }, 30000);
 }

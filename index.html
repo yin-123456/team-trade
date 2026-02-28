@@ -79,8 +79,8 @@
     </div>
     <div class="stat-info">
       <div class="stat-label">总持仓价值</div>
-      <div class="stat-value">$402,150</div>
-      <div class="stat-sub">平均杠杆 2.4x</div>
+      <div class="stat-value" id="totalValue">$0</div>
+      <div class="stat-sub" id="avgLeverage">平均杠杆 --</div>
     </div>
   </div>
   <div class="stat-card">
@@ -89,8 +89,8 @@
     </div>
     <div class="stat-info">
       <div class="stat-label">团队胜率</div>
-      <div class="stat-value">68.5%</div>
-      <div class="stat-sub">近30日 · 共 271 笔</div>
+      <div class="stat-value" id="winRate">--</div>
+      <div class="stat-sub" id="tradeCount">近30日 · 共 0 笔</div>
     </div>
   </div>
   <div class="stat-card">
@@ -99,8 +99,8 @@
     </div>
     <div class="stat-info">
       <div class="stat-label">活跃成员</div>
-      <div class="stat-value">6 <span class="stat-unit">/ 8 人</span></div>
-      <div class="stat-sub">4 个策略运行中</div>
+      <div class="stat-value" id="activeMembers">-- <span class="stat-unit">/ 6 人</span></div>
+      <div class="stat-sub" id="runningStrats">-- 个策略运行中</div>
     </div>
   </div>
 </section>
@@ -136,13 +136,14 @@
       <button class="ind-btn" data-ind="rsi">RSI</button>
       <button class="ind-btn" data-ind="macd">MACD</button>
     </div>
-    <div class="chart-area" id="chartArea"></div>
-    <div class="chart-overlay">
-      <div class="price-row">
-        <span class="price-big" id="priceMain">--</span>
-        <span class="price-change" id="priceChange">--</span>
+    <div class="chart-area" id="chartArea">
+      <div class="chart-overlay">
+        <div class="price-row">
+          <span class="price-big" id="priceMain">--</span>
+          <span class="price-change" id="priceChange">--</span>
+        </div>
+        <div class="chart-tags" id="chartTags"></div>
       </div>
-      <div class="chart-tags" id="chartTags"></div>
     </div>
   </section>
 
@@ -238,6 +239,9 @@
           <option>RSI反转策略</option>
           <option>MACD趋势策略</option>
           <option>网格交易策略</option>
+          <option>Fibonacci回撤策略</option>
+          <option>成交量突破策略</option>
+          <option>Ichimoku云图策略</option>
         </select>
       </div>
       <div class="field">
@@ -266,6 +270,9 @@
           <option>RSI反转策略</option>
           <option>MACD趋势策略</option>
           <option>网格交易策略</option>
+          <option>Fibonacci回撤策略</option>
+          <option>成交量突破策略</option>
+          <option>Ichimoku云图策略</option>
           <option>手动交易</option>
         </select>
         <button class="btn-primary-sm" id="btnExportJournal">导出CSV</button>
@@ -309,6 +316,9 @@
           <option>RSI 超卖反弹 — 抄底策略</option>
           <option>MACD 金叉 — 动量信号</option>
           <option>布林带突破 — 波动率策略</option>
+          <option>Fibonacci回撤 — 精准入场</option>
+          <option>成交量突破 — 量价确认</option>
+          <option>Ichimoku云图 — 多维趋势</option>
         </select>
       </div>
       <div class="field-row">
