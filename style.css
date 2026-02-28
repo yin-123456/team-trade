@@ -541,8 +541,16 @@ body {
 .chart-area {
   position: relative;
   height: 340px;
-  background: linear-gradient(180deg, rgba(4,8,16,0.9) 0%, rgba(10,22,40,0.95) 100%);
+  background: transparent;
   overflow: hidden;
+}
+
+.chart-overlay {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  z-index: 10;
+  pointer-events: none;
 }
 
 .chart-area canvas {
@@ -706,21 +714,22 @@ body {
   overflow-y: auto;
 }
 
-.strat-item {
+.strat-item, .strat-card {
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 14px 16px;
   margin-bottom: 8px;
-  transition: all 0.2s var(--ease);
+  transition: all 0.3s var(--ease);
 }
 
-.strat-item:hover {
-  border-color: var(--cyan);
-  box-shadow: 0 2px 8px rgba(34,211,238,0.08);
+.strat-item:hover, .strat-card:hover {
+  border-color: var(--border-glow);
+  box-shadow: var(--shadow-glow);
+  transform: translateY(-2px);
 }
 
-.strat-top {
+.strat-top, .strat-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -728,8 +737,9 @@ body {
 }
 
 .strat-name {
+  font-family: var(--font-display);
   font-size: 0.88rem;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text);
 }
 
@@ -740,18 +750,25 @@ body {
   border-radius: 12px;
 }
 
-.strat-badge.running { color: var(--green); background: var(--green-soft); }
-.strat-badge.paused { color: var(--amber); background: var(--amber-soft); }
-.strat-badge.stopped { color: var(--red); background: var(--red-soft); }
+.strat-badge.running, .strat-status.st-run { color: var(--green); background: var(--green-soft); }
+.strat-badge.paused, .strat-status.st-pause { color: var(--amber); background: var(--amber-soft); }
+.strat-badge.stopped, .strat-status.st-stop { color: var(--red); background: var(--red-soft); }
 
-.strat-meta {
+.strat-status {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 12px;
+}
+
+.strat-meta, .strat-stats {
   display: flex;
   gap: 14px;
   font-size: 0.72rem;
   color: var(--text-3);
 }
 
-.strat-bar {
+.strat-bar, .strat-progress {
   margin-top: 10px;
   height: 4px;
   background: var(--border);

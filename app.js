@@ -511,8 +511,7 @@ function connectKlineWS() {
         pushAutoSignal(bar);
       }
       detectSignals(klineData);
-      drawKline();
-      drawVolume();
+      updateTVBar(bar);
     }
   };
   wsKline.onerror = function(e) { console.error('Kline WS error:', e); };
@@ -651,242 +650,86 @@ function updatePriceDisplay() {
 }
 
 // ============================================================
-// Chart Drawing - drawKline (Main Chart Function)
+// TradingView Lightweight Charts
 // ============================================================
 
-function drawKline() {
-  var canvas = document.getElementById('klineCanvas');
-  if (!canvas || klineData.length === 0) return;
-  var area = document.getElementById('chartArea');
-  if (area) {
-    canvas.width = area.clientWidth;
-    canvas.height = area.clientHeight || 400;
-  }
-  var ctx = canvas.getContext('2d');
-  var W = canvas.width, H = canvas.height;
-  var pad = { top: 20, bottom: 30, left: 10, right: 60 };
-  var chartW = W - pad.left - pad.right;
-  var chartH = H - pad.top - pad.bottom;
+var tvChart = null;
+var tvCandleSeries = null;
+var tvVolumeSeries = null;
+var tvMa7Series = null;
+var tvMa25Series = null;
 
-  ctx.clearRect(0, 0, W, H);
+function initTVChart() {
+  var container = document.getElementById('chartArea');
+  if (!container || !window.LightweightCharts) return;
 
-  var data = klineData;
-  var n = data.length;
-  var barW = Math.max(2, Math.floor(chartW / n) - 2);
-  var gap = Math.max(1, Math.floor((chartW - barW * n) / n));
-  var totalBarW = barW + gap;
+  tvChart = LightweightCharts.createChart(container, {
+    width: container.clientWidth,
+    height: 340,
+    layout: { background: { color: 'transparent' }, textColor: '#8ba3c7', fontFamily: 'Outfit, sans-serif' },
+    grid: { vertLines: { color: 'rgba(56,189,248,0.04)' }, horzLines: { color: 'rgba(56,189,248,0.04)' } },
+    crosshair: { mode: 0 },
+    rightPriceScale: { borderColor: 'rgba(56,189,248,0.1)' },
+    timeScale: { borderColor: 'rgba(56,189,248,0.1)', timeVisible: true, secondsVisible: false }
+  });
 
-  // Find price range
-  var hi = -Infinity, lo = Infinity;
-  for (var i = 0; i < n; i++) {
-    var h = parseFloat(data[i].high);
-    var l = parseFloat(data[i].low);
-    if (h > hi) hi = h;
-    if (l < lo) lo = l;
-  }
-  var range = hi - lo || 1;
-  hi += range * 0.05;
-  lo -= range * 0.05;
-  range = hi - lo;
+  tvCandleSeries = tvChart.addCandlestickSeries({
+    upColor: '#22c55e', downColor: '#ef4444',
+    borderUpColor: '#22c55e', borderDownColor: '#ef4444',
+    wickUpColor: '#22c55e', wickDownColor: '#ef4444'
+  });
 
-  function yPos(price) { return pad.top + (1 - (price - lo) / range) * chartH; }
-  function xPos(idx) { return pad.left + idx * totalBarW + barW / 2; }
+  tvVolumeSeries = tvChart.addHistogramSeries({
+    priceFormat: { type: 'volume' },
+    priceScaleId: 'vol'
+  });
+  tvChart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
 
-  // Draw grid lines
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-  ctx.lineWidth = 1;
-  for (var g = 0; g <= 5; g++) {
-    var gy = pad.top + (chartH / 5) * g;
-    ctx.beginPath(); ctx.moveTo(pad.left, gy); ctx.lineTo(W - pad.right, gy); ctx.stroke();
-    var gPrice = hi - (range / 5) * g;
-    ctx.fillStyle = '#94a3b8';
-    ctx.font = '10px monospace';
-    ctx.textAlign = 'right';
-    ctx.fillText(formatPrice(gPrice), W - 5, gy + 3);
-  }
+  tvMa7Series = tvChart.addLineSeries({ color: '#f59e0b', lineWidth: 1.5 });
+  tvMa25Series = tvChart.addLineSeries({ color: '#a78bfa', lineWidth: 1.5 });
 
-  // Draw candlesticks
-  for (var i = 0; i < n; i++) {
-    var o = parseFloat(data[i].open);
-    var c = parseFloat(data[i].close);
-    var h = parseFloat(data[i].high);
-    var l = parseFloat(data[i].low);
-    var bull = c >= o;
-    var color = bull ? '#22c55e' : '#ef4444';
-    var x = pad.left + i * totalBarW;
-    var xMid = x + barW / 2;
+  window.addEventListener('resize', function() {
+    if (tvChart && container) tvChart.applyOptions({ width: container.clientWidth });
+  });
+}
 
-    // Wick
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(xMid, yPos(h));
-    ctx.lineTo(xMid, yPos(l));
-    ctx.stroke();
+function updateTVChart() {
+  if (!tvCandleSeries || klineData.length === 0) return;
 
-    // Body
-    var yTop = yPos(Math.max(o, c));
-    var yBot = yPos(Math.min(o, c));
-    var bodyH = Math.max(1, yBot - yTop);
-    ctx.fillStyle = color;
-    ctx.fillRect(x, yTop, barW, bodyH);
-  }
+  var candles = klineData.map(function(d) {
+    return { time: Math.floor(d.time / 1000), open: parseFloat(d.open), high: parseFloat(d.high), low: parseFloat(d.low), close: parseFloat(d.close) };
+  });
+  var volumes = klineData.map(function(d) {
+    var c = parseFloat(d.close), o = parseFloat(d.open);
+    return { time: Math.floor(d.time / 1000), value: parseFloat(d.volume), color: c >= o ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)' };
+  });
 
-  // --- Indicator Overlays ---
-  // Helper to draw a line series
-  function drawLine(series, color, width, dashed) {
-    if (series.length < 2) return;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = width || 1.5;
-    if (dashed) ctx.setLineDash([4, 3]);
-    else ctx.setLineDash([]);
-    ctx.beginPath();
-    var started = false;
-    for (var i = 0; i < series.length; i++) {
-      var px = xPos(series[i].idx);
-      var py = yPos(series[i].val);
-      if (!started) { ctx.moveTo(px, py); started = true; }
-      else ctx.lineTo(px, py);
-    }
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
+  tvCandleSeries.setData(candles);
+  tvVolumeSeries.setData(volumes);
 
-  // MA7 line
-  var ma7Vals = null;
+  // MA overlays
   if (indicators.ma7) {
-    ma7Vals = calcMA(data, 7);
-    drawLine(ma7Vals, '#f59e0b', 1.5, false);
-  }
+    var ma7 = calcMA(klineData, 7).map(function(p) { return { time: Math.floor(klineData[p.idx].time / 1000), value: p.val }; });
+    tvMa7Series.setData(ma7);
+  } else { tvMa7Series.setData([]); }
 
-  // MA25 line
-  var ma25Vals = null;
   if (indicators.ma25) {
-    ma25Vals = calcMA(data, 25);
-    drawLine(ma25Vals, '#6366f1', 1.5, false);
-  }
+    var ma25 = calcMA(klineData, 25).map(function(p) { return { time: Math.floor(klineData[p.idx].time / 1000), value: p.val }; });
+    tvMa25Series.setData(ma25);
+  } else { tvMa25Series.setData([]); }
 
-  // Bollinger Bands
-  if (indicators.boll) {
-    var boll = calcBoll(data, 20, 2);
-    drawLine(boll.upper, '#ef4444', 1, true);
-    drawLine(boll.mid, '#94a3b8', 1, false);
-    drawLine(boll.lower, '#22c55e', 1, true);
-    // Fill between upper and lower
-    if (boll.upper.length > 1) {
-      ctx.fillStyle = 'rgba(99,102,241,0.06)';
-      ctx.beginPath();
-      ctx.moveTo(xPos(boll.upper[0].idx), yPos(boll.upper[0].val));
-      for (var i = 1; i < boll.upper.length; i++) {
-        ctx.lineTo(xPos(boll.upper[i].idx), yPos(boll.upper[i].val));
-      }
-      for (var i = boll.lower.length - 1; i >= 0; i--) {
-        ctx.lineTo(xPos(boll.lower[i].idx), yPos(boll.lower[i].val));
-      }
-      ctx.closePath();
-      ctx.fill();
-    }
-  }
-
-  // --- Draw Buy/Sell Markers from tradeMarkers ---
-  for (var i = 0; i < tradeMarkers.length; i++) {
-    var mk = tradeMarkers[i];
-    var mx = xPos(mk.idx);
-    if (mk.type === 'buy') {
-      // Green triangle pointing up below candle low
-      var my = yPos(parseFloat(data[mk.idx].low)) + 12;
-      ctx.fillStyle = '#22c55e';
-      ctx.beginPath();
-      ctx.moveTo(mx, my - 8);
-      ctx.lineTo(mx - 5, my);
-      ctx.lineTo(mx + 5, my);
-      ctx.closePath();
-      ctx.fill();
-      // Label
-      ctx.font = '9px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#22c55e';
-      ctx.fillText('买', mx, my + 10);
-    } else {
-      // Red triangle pointing down above candle high
-      var my = yPos(parseFloat(data[mk.idx].high)) - 12;
-      ctx.fillStyle = '#ef4444';
-      ctx.beginPath();
-      ctx.moveTo(mx, my + 8);
-      ctx.lineTo(mx - 5, my);
-      ctx.lineTo(mx + 5, my);
-      ctx.closePath();
-      ctx.fill();
-      // Label
-      ctx.font = '9px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#ef4444';
-      ctx.fillText('卖', mx, my - 4);
-    }
-  }
-
-  // --- Update chart overlay tags with current indicator values ---
-  var tagsEl = document.getElementById('chartTags');
-  if (tagsEl) {
-    var tagHtml = '';
-    if (indicators.ma7 && ma7Vals && ma7Vals.length > 0) {
-      var v = ma7Vals[ma7Vals.length - 1].val;
-      tagHtml += '<span style="color:#f59e0b">MA7: ' + formatPrice(v) + '</span> ';
-    }
-    if (indicators.ma25 && ma25Vals && ma25Vals.length > 0) {
-      var v = ma25Vals[ma25Vals.length - 1].val;
-      tagHtml += '<span style="color:#6366f1">MA25: ' + formatPrice(v) + '</span> ';
-    }
-    if (indicators.rsi) {
-      var rsiVals = calcRSI(data, 14);
-      if (rsiVals.length > 0) {
-        tagHtml += '<span style="color:#a855f7">RSI: ' + rsiVals[rsiVals.length - 1].val.toFixed(1) + '</span> ';
-      }
-    }
-    if (indicators.macd) {
-      var macdRes = calcMACD(data);
-      if (macdRes.macd.length > 0) {
-        var mv = macdRes.macd[macdRes.macd.length - 1].val;
-        tagHtml += '<span style="color:#3b82f6">MACD: ' + mv.toFixed(2) + '</span> ';
-      }
-      if (macdRes.signal.length > 0) {
-        var sv = macdRes.signal[macdRes.signal.length - 1].val;
-        tagHtml += '<span style="color:#f59e0b">SIG: ' + sv.toFixed(2) + '</span> ';
-      }
-    }
-    if (indicators.boll) {
-      var bollRes = calcBoll(data, 20, 2);
-      if (bollRes.upper.length > 0) {
-        tagHtml += '<span style="color:#ef4444">UB: ' + formatPrice(bollRes.upper[bollRes.upper.length - 1].val) + '</span> ';
-        tagHtml += '<span style="color:#22c55e">LB: ' + formatPrice(bollRes.lower[bollRes.lower.length - 1].val) + '</span> ';
-      }
-    }
-    tagsEl.innerHTML = tagHtml;
-  }
+  tvChart.timeScale().fitContent();
 }
 
-// ============================================================
-// Chart Drawing - Volume
-// ============================================================
-
-function drawVolume() {
-  var el = document.getElementById('volumeBar');
-  if (!el || klineData.length === 0) return;
-  var html = '';
-  var maxVol = 0;
-  for (var i = 0; i < klineData.length; i++) {
-    var v = parseFloat(klineData[i].volume);
-    if (v > maxVol) maxVol = v;
-  }
-  for (var i = 0; i < klineData.length; i++) {
-    var v = parseFloat(klineData[i].volume);
-    var pct = maxVol > 0 ? (v / maxVol * 100) : 0;
-    var bull = parseFloat(klineData[i].close) >= parseFloat(klineData[i].open);
-    var color = bull ? '#22c55e' : '#ef4444';
-    html += '<div style="display:inline-block;width:' + Math.max(2, Math.floor(100 / klineData.length) - 1) + '%;height:' + pct + '%;background:' + color + ';opacity:0.6;vertical-align:bottom;margin-right:1px"></div>';
-  }
-  el.innerHTML = '<div style="display:flex;align-items:flex-end;height:100%">' + html + '</div>';
+function updateTVBar(bar) {
+  if (!tvCandleSeries) return;
+  var t = Math.floor(bar.time / 1000);
+  tvCandleSeries.update({ time: t, open: parseFloat(bar.open), high: parseFloat(bar.high), low: parseFloat(bar.low), close: parseFloat(bar.close) });
+  var c = parseFloat(bar.close), o = parseFloat(bar.open);
+  tvVolumeSeries.update({ time: t, value: parseFloat(bar.volume), color: c >= o ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)' });
 }
+
+// Volume is now handled by TV Charts - no separate drawVolume needed
 
 // ============================================================
 // Rendering - Orderbook
@@ -942,27 +785,58 @@ function renderOrderbook() {
 function renderPositions() {
   var el = document.getElementById('positionsList');
   if (!el) return;
+  var journal = loadJournal();
+  var openTrades = journal.filter(function(e) { return e.status === 'open'; });
+
+  if (openTrades.length === 0) {
+    // Show team members with real ticker data, no fake PnL
+    var html = '';
+    TEAM.forEach(function(m, idx) {
+      var pair = SYMBOL_LIST[idx % SYMBOL_LIST.length];
+      var key = SYMBOL_MAP[pair].toUpperCase();
+      var t = tickerData[key];
+      var price = t ? formatPrice(t.price) : '--';
+      var chg = t ? parseFloat(t.change) : 0;
+      var chgCls = chg >= 0 ? 'green' : 'red';
+      html += '<div class="position-row">';
+      html += '<div class="pos-avatar" style="background:' + m.color + '">' + m.init + '</div>';
+      html += '<div class="pos-info">';
+      html += '<div class="pos-name">' + m.name + ' <span class="tag-muted">$' + m.capital + ' 本金</span></div>';
+      html += '<div class="pos-detail">' + pair + ' $' + price + ' <span class="' + chgCls + '">' + (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%</span></div>';
+      html += '</div>';
+      html += '<div class="pos-pnl ' + chgCls + '">观望中</div>';
+      html += '</div>';
+    });
+    el.innerHTML = html;
+    return;
+  }
+
   var html = '';
-  TEAM.forEach(function(m, idx) {
-    var pair = SYMBOL_LIST[idx % SYMBOL_LIST.length];
-    var key = SYMBOL_MAP[pair].toUpperCase();
+  openTrades.forEach(function(e) {
+    var member = TEAM.find(function(m) { return m.name === e.member; }) || TEAM[0];
+    var sym = e.symbol || currentSymbol;
+    var key = SYMBOL_MAP[sym] ? SYMBOL_MAP[sym].toUpperCase() : '';
     var t = tickerData[key];
-    var price = t ? formatPrice(t.price) : '--';
-    var pnl = randBetween(-500, 3000).toFixed(2);
-    var pnlNum = parseFloat(pnl);
-    var pnlCls = pnlNum >= 0 ? 'green' : 'red';
-    var pnlSign = pnlNum >= 0 ? '+$' : '-$';
-    var side = idx % 2 === 0 ? 'LONG' : 'SHORT';
-    var sideCls = side === 'LONG' ? 'tag-long' : 'tag-short';
-    var lev = Math.floor(randBetween(2, 20));
+    var curPrice = t ? parseFloat(t.price) : 0;
+    var entry = parseFloat(e.entryPrice) || 0;
+    var qty = parseFloat(e.amount) || 0;
+    var lev = parseFloat(e.leverage) || 1;
+    var pnl = 0;
+    if (entry > 0 && curPrice > 0 && qty > 0) {
+      pnl = e.side === 'long' ? (curPrice - entry) * qty * lev : (entry - curPrice) * qty * lev;
+    }
+    var pnlCls = pnl >= 0 ? 'green' : 'red';
+    var pnlStr = (pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(2);
+    var side = e.side === 'long' ? 'LONG' : 'SHORT';
+    var sideCls = e.side === 'long' ? 'tag-long' : 'tag-short';
 
     html += '<div class="position-row">';
-    html += '<div class="pos-avatar" style="background:' + m.color + '">' + m.init + '</div>';
+    html += '<div class="pos-avatar" style="background:' + member.color + '">' + member.init + '</div>';
     html += '<div class="pos-info">';
-    html += '<div class="pos-name">' + m.name + ' <span class="' + sideCls + '">' + side + ' ' + lev + 'x</span></div>';
-    html += '<div class="pos-detail">' + pair + ' @ $' + price + '</div>';
+    html += '<div class="pos-name">' + member.name + ' <span class="' + sideCls + '">' + side + ' ' + lev + 'x</span></div>';
+    html += '<div class="pos-detail">' + sym + ' 入场 $' + formatPrice(entry) + ' → $' + formatPrice(curPrice) + '</div>';
     html += '</div>';
-    html += '<div class="pos-pnl ' + pnlCls + '">' + pnlSign + Math.abs(pnlNum).toFixed(2) + '</div>';
+    html += '<div class="pos-pnl ' + pnlCls + '">' + pnlStr + '</div>';
     html += '</div>';
   });
   el.innerHTML = html;
@@ -975,30 +849,34 @@ function renderPositions() {
 function renderStrategies() {
   var el = document.getElementById('strategyList');
   if (!el) return;
+  var stats = calcStrategyStats();
+  var journal = loadJournal();
   var html = '';
-  STRATS.forEach(function(name, idx) {
-    var pair = SYMBOL_LIST[idx % SYMBOL_LIST.length];
-    var status = idx < 3 ? 'running' : (idx === 3 ? 'paused' : 'stopped');
+
+  // Show each strategy from STRATS, enriched with real journal data
+  STRATS.forEach(function(name) {
+    var s = stats.find(function(x) { return x.name === name; });
+    var openCount = journal.filter(function(e) { return e.strategy === name && e.status === 'open'; }).length;
+    var total = s ? s.total : 0;
+    var pnl = s ? s.totalPnl : 0;
+    var winRate = s ? s.winRate : 0;
+    var status = openCount > 0 ? 'running' : (total > 0 ? 'paused' : 'stopped');
     var statusCls = status === 'running' ? 'st-run' : (status === 'paused' ? 'st-pause' : 'st-stop');
-    var statusTxt = status === 'running' ? '运行中' : (status === 'paused' ? '已暂停' : '已停止');
-    var pnl = randBetween(-200, 2000).toFixed(2);
-    var pnlNum = parseFloat(pnl);
-    var pnlCls = pnlNum >= 0 ? 'green' : 'red';
-    var pnlStr = (pnlNum >= 0 ? '+$' : '-$') + Math.abs(pnlNum).toFixed(2);
-    var trades = Math.floor(randBetween(5, 150));
-    var progress = Math.floor(randBetween(10, 95));
+    var statusTxt = status === 'running' ? '运行中' : (status === 'paused' ? '已完成' : '待启动');
+    var pnlCls = pnl >= 0 ? 'green' : 'red';
+    var pnlStr = (pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(2);
 
     html += '<div class="strat-card">';
     html += '<div class="strat-header">';
     html += '<span class="strat-name">' + name + '</span>';
     html += '<span class="strat-status ' + statusCls + '">' + statusTxt + '</span>';
     html += '</div>';
-    html += '<div class="strat-pair">' + pair + '</div>';
     html += '<div class="strat-stats">';
-    html += '<span>交易: ' + trades + '</span>';
+    html += '<span>交易 ' + total + ' 笔</span>';
+    html += '<span>胜率 ' + winRate.toFixed(0) + '%</span>';
     html += '<span class="' + pnlCls + '">PnL: ' + pnlStr + '</span>';
     html += '</div>';
-    html += '<div class="strat-progress"><div class="strat-bar" style="width:' + progress + '%"></div></div>';
+    html += '<div class="strat-progress"><div class="strat-bar" style="width:' + Math.min(100, winRate) + '%;background:' + (pnl >= 0 ? 'var(--green)' : 'var(--red)') + '"></div></div>';
     html += '</div>';
   });
   el.innerHTML = html;
@@ -1187,8 +1065,7 @@ function switchSymbol(sym) {
   depthData = { asks: [], bids: [] };
   tradeMarkers = [];
   fetchKlineHistory(currentSymbol, currentInterval, function() {
-    drawKline();
-    drawVolume();
+    updateTVChart();
   });
   connectKlineWS();
   connectDepthWS();
@@ -1224,8 +1101,7 @@ function initInteractions() {
         currentInterval = tf;
       }
       fetchKlineHistory(currentSymbol, currentInterval, function() {
-        drawKline();
-        drawVolume();
+        updateTVChart();
       });
       connectKlineWS();
     });
@@ -1370,7 +1246,7 @@ function initInteractions() {
         indicators[ind] = !indicators[ind];
         btn.classList.toggle('active', indicators[ind]);
         detectSignals(klineData);
-        drawKline();
+        updateTVChart();
       }
     });
     // Set initial active state
@@ -1436,11 +1312,22 @@ function initInteractions() {
     });
   }
 
-  // Window resize - redraw chart
-  window.addEventListener('resize', function() {
-    drawKline();
-    drawVolume();
-  });
+  // Window resize - TV Charts handles its own resize
+  // (handled in initTVChart)
+}
+
+// ============================================================
+// Update Top Stats Cards with Real Data
+// ============================================================
+
+function updateStatsCards() {
+  var overall = calcOverallStats();
+  var pnlEl = document.getElementById('totalPnl');
+  if (pnlEl) {
+    var p = overall.totalPnl;
+    pnlEl.textContent = (p >= 0 ? '+$' : '-$') + Math.abs(p).toFixed(2);
+    pnlEl.className = 'stat-value ' + (p >= 0 ? 'green' : 'red');
+  }
 }
 
 // ============================================================
@@ -1453,10 +1340,12 @@ function init() {
   setInterval(updateClock, 1000);
 
   // Render static content
+  initTVChart();
   renderStrategies();
   renderSignals();
   renderJournal();
   renderAnalytics();
+  updateStatsCards();
 
   // Fetch initial ticker data
   fetchAllTickers(function() {
@@ -1467,8 +1356,7 @@ function init() {
 
   // Fetch initial K-line data
   fetchKlineHistory(currentSymbol, currentInterval, function() {
-    drawKline();
-    drawVolume();
+    updateTVChart();
   });
 
   // Connect WebSocket streams

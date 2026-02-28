@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Syne:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
 <canvas id="particles"></canvas>
@@ -135,17 +136,14 @@
       <button class="ind-btn" data-ind="rsi">RSI</button>
       <button class="ind-btn" data-ind="macd">MACD</button>
     </div>
-    <div class="chart-area" id="chartArea">
-      <canvas id="klineCanvas"></canvas>
-      <div class="chart-overlay">
-        <div class="price-row">
-          <span class="price-big" id="priceMain">--</span>
-          <span class="price-change" id="priceChange">--</span>
-        </div>
-        <div class="chart-tags" id="chartTags"></div>
+    <div class="chart-area" id="chartArea"></div>
+    <div class="chart-overlay">
+      <div class="price-row">
+        <span class="price-big" id="priceMain">--</span>
+        <span class="price-change" id="priceChange">--</span>
       </div>
+      <div class="chart-tags" id="chartTags"></div>
     </div>
-    <div class="vol-bar" id="volumeBar"></div>
   </section>
 
   <!-- 右上：团队持仓 -->
