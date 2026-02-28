@@ -141,6 +141,10 @@ let tickerData = {};
 let klineData = [];
 let depthData = { asks: [], bids: [] };
 
+// --- 引擎集成 ---
+var _memberRoundRobin = 0; // 成员轮询计数器
+var _marketData = { fundingRate: null, fearGreed: null, longShortRatio: null, markPrice: 0 };
+
 let wsKline = null;
 let wsTicker = null;
 let wsDepth = null;
@@ -199,7 +203,9 @@ function closeJournalEntry(id, closePrice, closeNote) {
       } else {
         journal[i].pnl = (entry - exit) * qty * lev;
       }
-      journal[i].pnlPct = entry > 0 ? ((journal[i].pnl / (entry * qty)) * 100) : 0;
+      // ROE% = PnL / 保证金 × 100 (正确的杠杆收益率公式)
+      var margin = entry * qty / lev;
+      journal[i].pnlPct = margin > 0 ? (journal[i].pnl / margin * 100) : 0;
       break;
     }
   }
@@ -270,6 +276,70 @@ function calcOverallStats() {
     maxLoss: maxLoss,
     avgPnl: closed.length > 0 ? (totalPnl / closed.length) : 0
   };
+}
+
+// ============================================================
+// 引擎辅助函数 — 指标快照、成本预览、Toast提示
+// ============================================================
+
+function collectIndicatorSnapshot() {
+  var snap = {};
+  if (klineData.length < 2) return snap;
+  var rsiArr = calcRSI(klineData, 14);
+  if (rsiArr.length > 0) snap.rsi = rsiArr[rsiArr.length - 1].val;
+  var macdArr = calcMACD(klineData);
+  if (macdArr.length > 1) {
+    var last = macdArr[macdArr.length - 1];
+    var prev = macdArr[macdArr.length - 2];
+    snap.macdHist = last.hist;
+    snap.macdCross = (prev.hist <= 0 && last.hist > 0) ? 'golden' : (prev.hist >= 0 && last.hist < 0) ? 'death' : 'none';
+  }
+  var bollArr = calcBoll(klineData, 20);
+  if (bollArr.length > 0) {
+    var b = bollArr[bollArr.length - 1];
+    var curClose = parseFloat(klineData[klineData.length - 1].close);
+    snap.bollUpper = b.upper;
+    snap.bollLower = b.lower;
+    snap.bollPosition = curClose <= b.lower ? 'lower' : curClose >= b.upper ? 'upper' : 'mid';
+  }
+  var ma200 = calcMA(klineData, Math.min(200, klineData.length));
+  if (ma200.length > 0) {
+    snap.priceAboveMa200 = parseFloat(klineData[klineData.length - 1].close) > ma200[ma200.length - 1].val;
+  }
+  // 成交量判断
+  if (klineData.length >= 20) {
+    var volSum = 0;
+    for (var vi = klineData.length - 20; vi < klineData.length; vi++) volSum += parseFloat(klineData[vi].volume || 0);
+    var avgVol = volSum / 20;
+    snap.volumeAboveAvg = parseFloat(klineData[klineData.length - 1].volume || 0) > avgVol * 1.5;
+  }
+  return snap;
+}
+
+function updateCostPreview() {
+  var priceEl = document.getElementById('tradePrice');
+  var amountEl = document.getElementById('tradeAmount');
+  var levSlider = document.getElementById('leverageSlider');
+  var costEl = document.getElementById('estCost');
+  var feeEl = costEl ? costEl.parentElement.querySelector('.cost-line:nth-child(2) span:last-child') : null;
+  if (!priceEl || !amountEl || !costEl) return;
+  var price = parseFloat(priceEl.value.replace(/,/g, '')) || 0;
+  var qty = parseFloat(amountEl.value) || 0;
+  var lev = levSlider ? parseInt(levSlider.value) : 1;
+  var notional = price * qty;
+  var margin = notional / lev;
+  var fee = notional * 0.0004;
+  costEl.textContent = margin > 0 ? '$' + margin.toFixed(2) : '--';
+  if (feeEl) feeEl.textContent = '≈ $' + fee.toFixed(2);
+}
+
+function showTradeToast(title, detail, color) {
+  var toast = document.createElement('div');
+  toast.className = 'trade-toast ' + (color || 'green');
+  toast.innerHTML = '<div class="toast-title">' + escapeHtml(title) + '</div><div class="toast-detail">' + escapeHtml(detail) + '</div>';
+  document.body.appendChild(toast);
+  setTimeout(function() { toast.classList.add('show'); }, 10);
+  setTimeout(function() { toast.classList.remove('show'); setTimeout(function() { toast.remove(); }, 300); }, 4000);
 }
 
 // ============================================================
@@ -1203,21 +1273,29 @@ function initInteractions() {
     });
   }
 
-  // Percentage buttons (25%, 50%, 75%, 100%)
+  // Percentage buttons — 基于真实可用余额计算
   document.querySelectorAll('.pct-btn').forEach(function(btn) {
     btn.addEventListener('click', function() {
       document.querySelectorAll('.pct-btn').forEach(function(b) { b.classList.remove('active'); });
       btn.classList.add('active');
       var pct = parseInt(btn.getAttribute('data-pct')) || 0;
       var amountEl = document.getElementById('tradeAmount');
-      if (amountEl) {
-        var maxAmount = 10;
-        amountEl.value = (maxAmount * pct / 100).toFixed(4);
+      var priceEl = document.getElementById('tradePrice');
+      if (amountEl && priceEl) {
+        var member = TEAM[_memberRoundRobin % TEAM.length];
+        var available = TT.getAvailableBalance(member.name);
+        var lev = levSlider ? parseInt(levSlider.value) : 1;
+        var price = parseFloat(priceEl.value.replace(/,/g, '')) || 1;
+        // 可用余额 × 杠杆 × 百分比 / 价格 = 最大数量
+        var maxQty = (available * lev * pct / 100) / price;
+        amountEl.value = maxQty > 0 ? maxQty.toFixed(4) : '0';
+        // 更新预估成本显示
+        updateCostPreview();
       }
     });
   });
 
-  // Execute trade button
+  // Execute trade button — 接入 TT.openPosition() 引擎
   var btnExec = document.getElementById('btnExecute');
   if (btnExec) {
     btnExec.addEventListener('click', function() {
@@ -1234,45 +1312,84 @@ function initInteractions() {
       var note = noteEl ? noteEl.value : '';
       var leverage = levSlider ? levSlider.value : '1';
 
-      // Input validation
-      var v = validateTradeInput(price, amount, leverage);
-      if (!v.valid) { alert(v.errors.join('\n')); return; }
-
-      var member = TEAM[Math.floor(Math.random() * TEAM.length)];
+      // 成员轮询分配（不再随机）
+      var member = TEAM[_memberRoundRobin % TEAM.length];
+      _memberRoundRobin++;
       var direction = side === 'long' ? '买入' : '卖出';
 
-      // Write to journal
-      addJournalEntry({
-        side: side,
+      // 收集当前指标快照
+      var indSnap = collectIndicatorSnapshot();
+
+      // 交易天平：开仓前多空论据
+      var balance = TTA.calcTradeBalance(currentSymbol, side, indSnap);
+
+      // 急救模式检测
+      var emergency = TTA.checkEmergency(member.name);
+      if (emergency.triggered) {
+        if (!confirm('⚠️ 风控警告: ' + emergency.reason + '\n确定继续交易吗？')) return;
+      }
+
+      // 交易天平警告
+      if (balance.recommendation === 'stop') {
+        if (!confirm('🛑 交易天平评分 ' + balance.score.toFixed(0) + '/100\n反对理由:\n' + balance.cons.join('\n') + '\n确定继续？')) return;
+      }
+
+      // 通过引擎开仓
+      var result = TT.openPosition({
+        member: member.name,
         symbol: currentSymbol,
-        entryPrice: price,
-        amount: amount,
+        side: side,
+        price: price,
+        quantity: amount,
         leverage: leverage,
         strategy: strategy,
-        method: method,
-        note: note,
-        member: member.name,
-        capital: member.capital,
-        source: 'manual'
+        source: 'manual',
+        note: (method ? '方法: ' + method + ' | ' : '') + note,
+        indicators: indSnap
       });
+
+      if (!result.ok) {
+        alert('❌ 开仓失败:\n' + result.errors.join('\n'));
+        return;
+      }
+
+      // 同时写入旧日志系统（兼容）
+      addJournalEntry({
+        side: side, symbol: currentSymbol, entryPrice: price,
+        amount: amount, leverage: leverage, strategy: strategy,
+        method: method, note: note, member: member.name,
+        capital: member.capital, source: 'manual',
+        positionId: result.position.id,
+        margin: result.margin, fee: result.fee,
+        liquidationPrice: result.position.liquidationPrice
+      });
+
+      // AI 信号评分
+      var signal = TTA.calcSignalScore(indSnap);
 
       SIGNALS.unshift({
         type: side,
-        text: direction + ' ' + currentSymbol + ' @ $' + formatPrice(price) + ' x ' + amount + ' [' + strategy + ']',
-        member: member.name,
-        init: member.init,
-        color: member.color,
-        time: '刚刚',
-        pair: currentSymbol
+        text: direction + ' ' + currentSymbol + ' @ $' + formatPrice(price) + ' x ' + amount + ' ' + leverage + 'x [' + strategy + '] 保证金$' + result.margin.toFixed(2) + ' 手续费$' + result.fee.toFixed(2),
+        member: member.name, init: member.init, color: member.color,
+        time: '刚刚', pair: currentSymbol,
+        signal: signal
       });
       if (SIGNALS.length > 50) SIGNALS.length = 50;
+
       renderSignals();
       renderJournal();
       renderAnalytics();
+      renderPositions();
+      updateStatsCards();
+      renderLeaderboard();
+      renderRiskPanel();
+      renderQuantDashboard();
 
-      // Clear note field after trade
       if (noteEl) noteEl.value = '';
       if (methodEl) methodEl.value = '';
+
+      // 显示开仓成功提示
+      showTradeToast(direction + ' ' + currentSymbol + ' 成功', 'margin: $' + result.margin.toFixed(2) + ' | 强平价: $' + formatPrice(result.position.liquidationPrice), side === 'long' ? 'green' : 'red');
     });
   }
 
@@ -1313,6 +1430,7 @@ function initInteractions() {
         btn.classList.toggle('active', indicators[ind]);
         detectSignals(klineData);
         updateTVChart();
+        updateChartIndicators();
       }
     });
     // Set initial active state
@@ -1380,6 +1498,20 @@ function initInteractions() {
 
   // Window resize - TV Charts handles its own resize
   // (handled in initTVChart)
+
+  // 影子交易按钮
+  var btnShadow = document.getElementById('btnShadowTrade');
+  if (btnShadow) {
+    btnShadow.addEventListener('click', function() {
+      var side = document.getElementById('btnBuy') && document.getElementById('btnBuy').classList.contains('active') ? 'long' : 'short';
+      var priceEl = document.getElementById('tradePrice');
+      var price = priceEl ? priceEl.value.replace(/,/g, '') : '0';
+      if (!price || parseFloat(price) <= 0) { alert('请先输入价格'); return; }
+      TTA.addShadowTrade({ symbol: currentSymbol, side: side, price: price });
+      renderShadowPanel();
+      showTradeToast('👻 影子下单', side === 'long' ? '做多' : '做空' + ' ' + currentSymbol + ' @ $' + formatPrice(price), 'amber');
+    });
+  }
 }
 
 // ============================================================
@@ -1596,6 +1728,9 @@ function riskItem(label, value, color) {
 // ============================================================
 
 function init() {
+  // === 引擎初始化 ===
+  TT.initAccounts(TEAM);
+
   // Setup clock
   updateClock();
   setInterval(updateClock, 1000);
@@ -1611,6 +1746,9 @@ function init() {
   renderEquityCurve();
   renderLeaderboard();
   renderRiskPanel();
+  renderQuantDashboard();
+  renderSentimentPanel();
+  renderShadowPanel();
 
   // Fetch initial ticker data
   fetchAllTickers(function() {
@@ -1618,11 +1756,14 @@ function init() {
     updatePriceDisplay();
     renderPositions();
     updateStatsCards();
+    // 同步标记价格到引擎
+    syncMarkPrices();
   });
 
   // Fetch initial K-line data
   fetchKlineHistory(currentSymbol, currentInterval, function() {
     updateTVChart();
+    updateChartIndicators();
   });
 
   // Connect WebSocket streams
@@ -1633,6 +1774,31 @@ function init() {
   // Setup event bindings
   initInteractions();
 
+  // === 新增: 数据源获取 ===
+  fetchMarketData();
+  setInterval(fetchMarketData, 60000); // 每分钟刷新
+
+  // === 新增: 强平检测 (每5秒) ===
+  setInterval(function() {
+    var liquidated = TT.checkLiquidations();
+    if (liquidated.length > 0) {
+      liquidated.forEach(function(liq) {
+        showTradeToast('⚠️ 强制平仓', '仓位已被强平，亏损保证金', 'red');
+      });
+      renderPositions();
+      updateStatsCards();
+      renderRiskPanel();
+    }
+  }, 5000);
+
+  // === 新增: 影子交易结算 (每分钟) ===
+  setInterval(function() {
+    var key = SYMBOL_MAP[currentSymbol] ? SYMBOL_MAP[currentSymbol].toUpperCase() : '';
+    var t = tickerData[key];
+    if (t) TTA.resolveShadows(currentSymbol, parseFloat(t.price));
+    renderShadowPanel();
+  }, 60000);
+
   // Refresh positions periodically
   setInterval(function() {
     fetchAllTickers(function() {
@@ -1641,8 +1807,283 @@ function init() {
       renderPositions();
       updateStatsCards();
       renderRiskPanel();
+      syncMarkPrices();
     });
   }, 30000);
+
+  // 成本预览实时更新
+  var tradeAmountEl = document.getElementById('tradeAmount');
+  var tradePriceEl = document.getElementById('tradePrice');
+  if (tradeAmountEl) tradeAmountEl.addEventListener('input', updateCostPreview);
+  if (tradePriceEl) tradePriceEl.addEventListener('input', updateCostPreview);
+}
+
+// ============================================================
+// 图表指标可视化 — 布林带叠加 + RSI/MACD 副图
+// ============================================================
+
+var tvBollUpper = null, tvBollLower = null, tvBollMid = null;
+
+function updateChartIndicators() {
+  if (!tvChart || klineData.length < 20) return;
+
+  // 布林带叠加到主图
+  if (indicators.boll) {
+    var bollData = calcBoll(klineData, 20);
+    var upper = [], lower = [], mid = [];
+    bollData.forEach(function(b) {
+      var t = Math.floor(klineData[b.idx].time / 1000);
+      upper.push({ time: t, value: b.upper });
+      lower.push({ time: t, value: b.lower });
+      mid.push({ time: t, value: b.mid });
+    });
+    if (!tvBollUpper) {
+      tvBollUpper = tvChart.addLineSeries({ color: 'rgba(168,85,247,0.5)', lineWidth: 1, lineStyle: 2 });
+      tvBollLower = tvChart.addLineSeries({ color: 'rgba(168,85,247,0.5)', lineWidth: 1, lineStyle: 2 });
+      tvBollMid = tvChart.addLineSeries({ color: 'rgba(168,85,247,0.3)', lineWidth: 1, lineStyle: 1 });
+    }
+    tvBollUpper.setData(upper);
+    tvBollLower.setData(lower);
+    tvBollMid.setData(mid);
+  } else {
+    if (tvBollUpper) { tvBollUpper.setData([]); tvBollLower.setData([]); tvBollMid.setData([]); }
+  }
+
+  // 更新图表标签
+  updateChartTags();
+}
+
+function updateChartTags() {
+  var el = document.getElementById('chartTags');
+  if (!el || klineData.length < 2) return;
+  var html = '';
+
+  // RSI 标签
+  var rsiArr = calcRSI(klineData, 14);
+  if (rsiArr.length > 0) {
+    var rsi = rsiArr[rsiArr.length - 1].val;
+    var rsiCls = rsi > 70 ? 'red' : rsi < 30 ? 'green' : '';
+    html += '<span class="chart-tag ' + rsiCls + '">RSI ' + rsi.toFixed(1) + '</span>';
+  }
+
+  // MACD 标签
+  var macdArr = calcMACD(klineData);
+  if (macdArr.length > 0) {
+    var m = macdArr[macdArr.length - 1];
+    var mCls = m.hist > 0 ? 'green' : 'red';
+    html += '<span class="chart-tag ' + mCls + '">MACD ' + m.hist.toFixed(2) + '</span>';
+  }
+
+  // 布林带标签
+  if (indicators.boll) {
+    var bollArr = calcBoll(klineData, 20);
+    if (bollArr.length > 0) {
+      var b = bollArr[bollArr.length - 1];
+      var bw = ((b.upper - b.lower) / b.mid * 100).toFixed(1);
+      html += '<span class="chart-tag">BOLL宽 ' + bw + '%</span>';
+    }
+  }
+
+  // AI 信号评分
+  var snap = collectIndicatorSnapshot();
+  var sig = TTA.calcSignalScore(snap);
+  var sigCls = sig.score >= 60 ? 'green' : sig.score <= 40 ? 'red' : '';
+  html += '<span class="chart-tag ' + sigCls + '">AI ' + sig.score + '/100 ' + sig.strength + '</span>';
+
+  el.innerHTML = html;
+}
+
+// ============================================================
+// 量化仪表盘 — 核心盈利指标
+// ============================================================
+
+function renderQuantDashboard() {
+  var el = document.getElementById('quantDashboard');
+  if (!el) return;
+  var html = '';
+
+  TEAM.forEach(function(m) {
+    var metrics = TTA.calcCoreMetrics(m.name);
+    var acc = TT.getAccount(m.name);
+    if (!acc) return;
+
+    var impulse = TTA.detectImpulseTrades(m.name);
+    var spectrum = TTA.calcTradeSpectrum(m.name);
+
+    html += '<div class="quant-member">';
+    html += '<div class="quant-header">';
+    html += '<span class="pos-avatar" style="background:' + m.color + ';width:28px;height:28px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%">' + m.init + '</span>';
+    html += '<span class="quant-name">' + m.name + '</span>';
+    html += '<span class="quant-bal">$' + acc.walletBalance.toFixed(2) + '</span>';
+    html += '</div>';
+
+    if (!metrics) {
+      html += '<div class="quant-empty">暂无已平仓数据</div>';
+    } else {
+      html += '<div class="quant-grid">';
+      html += quantCell('期望值', '$' + metrics.expectancy.toFixed(2), metrics.expectancy > 0 ? 'green' : 'red');
+      html += quantCell('胜率', (metrics.winRate * 100).toFixed(1) + '%', metrics.winRate > 0.5 ? 'green' : '');
+      html += quantCell('盈亏比', metrics.riskReward === Infinity ? '∞' : metrics.riskReward.toFixed(2), metrics.riskReward > 1.5 ? 'green' : 'red');
+      html += quantCell('凯利仓位', (metrics.kelly * 100).toFixed(1) + '%', '');
+      html += quantCell('最大连亏', metrics.maxConsecLoss + '笔', metrics.maxConsecLoss >= 3 ? 'red' : '');
+      html += quantCell('费率侵蚀', metrics.feeErosion.toFixed(1) + '%', metrics.feeErosion > 10 ? 'red' : '');
+      html += '</div>';
+    }
+
+    // 冲动交易检测
+    if (impulse.impulseCount > 0) {
+      var impCls = impulse.impulsePnl < 0 ? 'red' : 'green';
+      html += '<div class="quant-warn">⚡ 冲动交易 ' + impulse.impulseCount + '笔 · PnL <span class="' + impCls + '">$' + impulse.impulsePnl.toFixed(2) + '</span></div>';
+    }
+
+    html += '</div>';
+  });
+
+  el.innerHTML = html || '<div class="quant-empty">暂无数据</div>';
+}
+
+function quantCell(label, value, cls) {
+  return '<div class="quant-cell"><div class="quant-val ' + (cls || '') + '">' + value + '</div><div class="quant-label">' + label + '</div></div>';
+}
+
+// ============================================================
+// 市场情绪面板
+// ============================================================
+
+function renderSentimentPanel() {
+  var el = document.getElementById('sentimentPanel');
+  if (!el) return;
+  var html = '';
+
+  // 恐惧贪婪指数
+  var fg = _marketData.fearGreed;
+  if (fg) {
+    var fgCls = fg.value <= 25 ? 'red' : fg.value >= 75 ? 'green' : fg.value >= 50 ? 'green' : 'amber';
+    var fgBar = fg.value;
+    html += '<div class="sent-item">';
+    html += '<div class="sent-label">恐惧贪婪指数</div>';
+    html += '<div class="sent-val ' + fgCls + '">' + fg.value + ' · ' + fg.text + '</div>';
+    html += '<div class="sent-bar-wrap"><div class="sent-bar" style="width:' + fgBar + '%;background:' + (fgCls === 'red' ? 'var(--red)' : fgCls === 'green' ? 'var(--green)' : '#f59e0b') + '"></div></div>';
+    html += '</div>';
+  }
+
+  // 资金费率
+  if (_marketData.fundingRate !== null) {
+    var fr = parseFloat(_marketData.fundingRate);
+    var frCls = fr > 0.01 ? 'green' : fr < -0.01 ? 'red' : '';
+    html += '<div class="sent-item">';
+    html += '<div class="sent-label">资金费率</div>';
+    html += '<div class="sent-val ' + frCls + '">' + _marketData.fundingRate + '%</div>';
+    html += '</div>';
+  }
+
+  // 多空比
+  if (_marketData.longShortRatio) {
+    var ls = parseFloat(_marketData.longShortRatio);
+    var lsCls = ls > 1.5 ? 'green' : ls < 0.7 ? 'red' : '';
+    var longPct = (ls / (1 + ls) * 100).toFixed(0);
+    html += '<div class="sent-item">';
+    html += '<div class="sent-label">多空比</div>';
+    html += '<div class="sent-val ' + lsCls + '">' + _marketData.longShortRatio + ' (多' + longPct + '%)</div>';
+    html += '<div class="sent-bar-wrap"><div class="sent-bar-dual"><div class="sent-long" style="width:' + longPct + '%"></div></div></div>';
+    html += '</div>';
+  }
+
+  // 标记价格
+  if (_marketData.markPrice > 0) {
+    html += '<div class="sent-item">';
+    html += '<div class="sent-label">标记价格</div>';
+    html += '<div class="sent-val">$' + formatPrice(_marketData.markPrice) + '</div>';
+    html += '</div>';
+  }
+
+  el.innerHTML = html || '<div class="quant-empty">加载中...</div>';
+}
+
+// ============================================================
+// 影子交易面板
+// ============================================================
+
+function renderShadowPanel() {
+  var el = document.getElementById('shadowPanel');
+  if (!el) return;
+  var stats = TTA.getShadowStats();
+  var shadows = (TT.load(TT.DB.SHADOW) || []).slice(0, 10);
+
+  var html = '<div class="shadow-stats">';
+  html += '<span>总计 ' + stats.total + ' 笔</span>';
+  html += '<span>胜率 ' + (stats.winRate * 100).toFixed(0) + '%</span>';
+  var profCls = stats.totalProfit >= 0 ? 'green' : 'red';
+  html += '<span class="' + profCls + '">虚拟PnL $' + stats.totalProfit.toFixed(2) + '</span>';
+  html += '</div>';
+
+  if (shadows.length > 0) {
+    html += '<div class="shadow-list">';
+    shadows.forEach(function(s) {
+      var cls = s.resolved ? (s.result > 0 ? 'green' : 'red') : '';
+      var status = s.resolved ? (s.result > 0 ? '+$' + s.result.toFixed(2) : '-$' + Math.abs(s.result).toFixed(2)) : '等待中...';
+      var side = s.side === 'long' ? '▲' : '▼';
+      html += '<div class="shadow-row ' + cls + '">';
+      html += '<span>' + side + ' ' + s.symbol + ' $' + formatPrice(s.price) + '</span>';
+      html += '<span class="' + cls + '">' + status + '</span>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+}
+
+// ============================================================
+// 数据源获取 — 标记价格、资金费率、恐惧贪婪、多空比
+// ============================================================
+
+function syncMarkPrices() {
+  SYMBOL_LIST.forEach(function(sym) {
+    var key = SYMBOL_MAP[sym] ? SYMBOL_MAP[sym].toUpperCase() : '';
+    var t = tickerData[key];
+    if (t) TT.setMarkPrice(sym, parseFloat(t.price));
+  });
+}
+
+function fetchMarketData() {
+  // 1. 标记价格 + 资金费率
+  var sym = SYMBOL_MAP[currentSymbol];
+  fetch('https://fapi.binance.com/fapi/v1/premiumIndex?symbol=' + sym.toUpperCase())
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.markPrice) {
+        _marketData.markPrice = parseFloat(d.markPrice);
+        TT.setMarkPrice(currentSymbol, _marketData.markPrice);
+      }
+      if (d.lastFundingRate) {
+        _marketData.fundingRate = (parseFloat(d.lastFundingRate) * 100).toFixed(4);
+      }
+      renderSentimentPanel();
+    }).catch(function() {});
+
+  // 2. 多空比
+  fetch('https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=' + sym.toUpperCase() + '&period=5m&limit=1')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d && d[0]) {
+        _marketData.longShortRatio = parseFloat(d[0].longShortRatio).toFixed(2);
+      }
+      renderSentimentPanel();
+    }).catch(function() {});
+
+  // 3. 恐惧贪婪指数
+  fetch('https://api.alternative.me/fng/?limit=1')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d && d.data && d.data[0]) {
+        _marketData.fearGreed = {
+          value: parseInt(d.data[0].value),
+          text: d.data[0].value_classification
+        };
+      }
+      renderSentimentPanel();
+    }).catch(function() {});
 }
 
 // ============================================================
