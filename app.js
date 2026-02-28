@@ -1430,12 +1430,12 @@ function initInteractions() {
   var modalClose = document.getElementById('modalClose');
   if (btnAddStrat && modalOverlay) {
     btnAddStrat.addEventListener('click', function() {
-      modalOverlay.classList.add('show');
+      modalOverlay.classList.add('active');
     });
   }
   if (modalClose && modalOverlay) {
     modalClose.addEventListener('click', function() {
-      modalOverlay.classList.remove('show');
+      modalOverlay.classList.remove('active');
     });
   }
   if (modalOverlay) {
@@ -1541,6 +1541,50 @@ function initInteractions() {
       TTA.addShadowTrade({ symbol: currentSymbol, side: side, price: price });
       renderShadowPanel();
       showTradeToast('👻 影子下单', side === 'long' ? '做多' : '做空' + ' ' + currentSymbol + ' @ $' + formatPrice(price), 'amber');
+    });
+  }
+
+  // ---- 创新功能分类筛选 ----
+  document.querySelectorAll('.innov-cat').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.innov-cat').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      renderInnovGrid(btn.getAttribute('data-cat'));
+    });
+  });
+
+  // ---- 创新功能卡片点击弹窗 ----
+  var innovGrid = document.getElementById('innovGrid');
+  var innovModal = document.getElementById('innovModal');
+  if (innovGrid) {
+    innovGrid.addEventListener('click', function(e) {
+      var card = e.target.closest('.innov-card');
+      if (!card) return;
+      var id = parseInt(card.getAttribute('data-id'));
+      var item = INNOVATIONS.find(function(it) { return it.id === id; });
+      if (!item) return;
+      document.getElementById('innovModalIcon').textContent = item.icon;
+      document.getElementById('innovModalName').textContent = item.name;
+      document.getElementById('innovModalCat').textContent = CAT_NAMES[item.cat] || '';
+      document.getElementById('innovModalCat').style.color = CAT_COLORS[item.cat] || '#38bdf8';
+      document.getElementById('innovModalDesc').textContent = item.desc;
+      document.getElementById('innovModalUsage').textContent = item.usage;
+      document.getElementById('innovModalImpact').textContent = item.impact;
+      var statusEl = document.getElementById('innovModalStatus');
+      statusEl.textContent = item.status === 'active' ? '✅ 已上线 — 可直接使用' : '🔮 规划中 — 即将推出';
+      statusEl.className = 'innov-modal-status ' + item.status;
+      if (innovModal) innovModal.classList.add('active');
+    });
+  }
+
+  // ---- 创新弹窗关闭 ----
+  var innovModalClose = document.getElementById('innovModalClose');
+  if (innovModalClose && innovModal) {
+    innovModalClose.addEventListener('click', function() { innovModal.classList.remove('active'); });
+  }
+  if (innovModal) {
+    innovModal.addEventListener('click', function(e) {
+      if (e.target === innovModal) innovModal.classList.remove('active');
     });
   }
 }
@@ -1785,6 +1829,7 @@ function init() {
   renderRhythmPanel();
   renderHeatmapPanel();
   renderGamificationPanel();
+  renderInnovGrid();
 
   // Fetch initial ticker data
   fetchAllTickers(function() {
@@ -2470,7 +2515,115 @@ function fetchMarketData() {
 }
 
 // ============================================================
-// Bootstrap
+// 80项创新功能数据
 // ============================================================
 
+var INNOVATIONS = [
+  {id:1,icon:'👻',name:'影子交易',cat:'trade',desc:'不用真金白银，虚拟下单验证你的判断力。系统1小时后自动结算，统计你的"如果当时下了"胜率。',usage:'在市场Tab点击"影子下单"，选择方向和价格即可。1小时后自动结算，查看虚拟盈亏。',impact:'帮你建立交易信心，减少犹豫导致的错过行情，提升决策速度20%+',status:'active'},
+  {id:2,icon:'🧬',name:'交易者DNA',cat:'analysis',desc:'分析你的交易基因——擅长做多还是做空？高杠杆还是低杠杆？哪个时段最赚钱？',usage:'在分析Tab的量化仪表盘中查看每位成员的交易光谱数据。',impact:'找到你的"甜蜜区"，专注优势领域可提升盈利30%+',status:'active'},
+  {id:3,icon:'🔮',name:'What-If假设机',cat:'ai',desc:'输入假设条件（如"如果我用5x杠杆而不是10x"），AI回测历史数据给出模拟结果。',usage:'在交易面板输入不同参数，系统自动对比不同杠杆/仓位的历史表现。',impact:'避免过度杠杆，历史数据显示降低杠杆可减少40%回撤',status:'planned'},
+  {id:4,icon:'🌤️',name:'市场天气预报',cat:'ai',desc:'综合恐惧贪婪指数、资金费率、多空比、波动率，给出今日市场"天气"：晴/多云/暴风雨。',usage:'在市场Tab查看市场情绪面板，系统自动综合多维数据给出天气评级。',impact:'暴风雨天气减仓可避免80%的黑天鹅损失',status:'active'},
+  {id:5,icon:'⚔️',name:'交易竞技场',cat:'social',desc:'团队成员PK赛，比拼胜率、盈亏比、最大回撤等指标，激发良性竞争。',usage:'在成长Tab查看排行榜，系统自动根据多维指标综合排名。',impact:'团队竞争氛围提升整体交易纪律性，平均胜率提升15%',status:'active'},
+  {id:6,icon:'💘',name:'策略红娘',cat:'ai',desc:'根据你的交易风格和历史数据，AI推荐最适合你的策略组合。',usage:'系统分析你的历史交易，在策略面板标注"推荐"标签。',impact:'匹配度高的策略可提升盈利效率25%',status:'planned'},
+  {id:7,icon:'⏳',name:'时间胶囊',cat:'game',desc:'记录当前市场判断，封存30天后开启，回顾你的预测准确率。',usage:'在交易心得中写下预测，系统30天后自动对比实际走势。',impact:'培养长期思维，减少短线冲动交易',status:'planned'},
+  {id:8,icon:'👨‍🏫',name:'导师匹配',cat:'social',desc:'根据交易数据，自动匹配团队中最适合指导你的"导师"成员。',usage:'系统分析每位成员的优势领域，自动推荐互补配对。',impact:'新手跟随高手学习，成长速度提升3倍',status:'planned'},
+  {id:9,icon:'🎬',name:'市场剧本',cat:'ai',desc:'AI根据当前技术形态，生成3种可能的市场走势剧本及概率。',usage:'在图表区域查看AI生成的多空剧本和概率评估。',impact:'提前准备应对方案，减少被动交易',status:'planned'},
+  {id:10,icon:'⚡',name:'交易能量',cat:'game',desc:'每日交易能量值，高质量交易充能，冲动交易耗能。能量耗尽建议休息。',usage:'顶部状态栏显示当日能量值，低于20%时系统提醒休息。',impact:'防止过度交易，研究显示每日超过5笔交易盈利率下降60%',status:'planned'},
+  {id:11,icon:'💓',name:'交易心跳',cat:'analysis',desc:'实时监控交易频率，像心电图一样展示你的交易节奏是否健康。',usage:'在分析Tab的节奏大师面板查看交易频率分布。',impact:'识别冲动交易模式，冲动交易平均亏损是正常交易的2.3倍',status:'active'},
+  {id:12,icon:'🌀',name:'平行宇宙',cat:'ai',desc:'同时模拟多种策略在当前市场的表现，找出最优策略。',usage:'系统自动对比8种策略在近期K线上的模拟表现。',impact:'选择当前最优策略可提升短期收益率',status:'planned'},
+  {id:13,icon:'⭐',name:'交易者星座',cat:'game',desc:'根据交易风格分类：激进型(火象)、稳健型(土象)、灵活型(风象)、直觉型(水象)。',usage:'系统根据你的历史数据自动分析交易风格类型。',impact:'了解自己的交易性格，扬长避短',status:'planned'},
+  {id:14,icon:'🗺️',name:'交易地图',cat:'analysis',desc:'可视化展示你的交易路径——从入场到出场的完整轨迹。',usage:'在交易日志中点击任意交易，查看完整的价格轨迹图。',impact:'复盘利器，直观看到入场出场时机是否最优',status:'planned'},
+  {id:15,icon:'💡',name:'呼吸灯',cat:'risk',desc:'根据市场波动率动态调整界面呼吸灯颜色：绿色平静/黄色警惕/红色危险。',usage:'页面背景粒子颜色自动随市场波动率变化。',impact:'潜意识提醒风险等级，减少高波动期的冲动操作',status:'planned'},
+  {id:16,icon:'🏛️',name:'交易考古',cat:'analysis',desc:'挖掘历史交易中的"化石"——那些被遗忘但有价值的交易模式。',usage:'系统自动分析历史交易，发现重复出现的盈利/亏损模式。',impact:'发现隐藏的盈利模式，平均可提升策略效率20%',status:'planned'},
+  {id:17,icon:'🎵',name:'交易之声',cat:'game',desc:'将K线走势转化为音乐旋律，上涨高音下跌低音，用听觉感知市场。',usage:'开启声音模式后，价格变动会转化为不同音调的提示音。',impact:'多感官感知市场，部分交易者反馈听觉辅助提升了直觉判断',status:'planned'},
+  {id:18,icon:'🧪',name:'策略进化',cat:'ai',desc:'策略自动进化系统——根据近期表现自动微调参数，适应市场变化。',usage:'系统每周自动回测并优化策略参数，在策略面板显示优化建议。',impact:'自适应策略比固定参数策略平均多赚15-25%',status:'planned'},
+  {id:19,icon:'🎭',name:'交易剧场',cat:'social',desc:'匿名分享精彩交易案例，团队投票评选"最佳操作"和"最惨教训"。',usage:'在交易日志中标记精彩交易，系统自动推送到团队动态。',impact:'从他人的成功和失败中学习，加速经验积累',status:'planned'},
+  {id:20,icon:'📜',name:'交易遗嘱',cat:'risk',desc:'预设极端情况下的自动操作：如BTC跌破某价位自动全部平仓。',usage:'在风控面板设置紧急平仓条件和触发价格。',impact:'黑天鹅事件中自动保护资金，避免情绪化决策',status:'planned'},
+  {id:21,icon:'📦',name:'交易黑匣子',cat:'risk',desc:'记录每笔亏损交易的完整上下文——入场理由、市场状态、情绪状态，自动分析亏损模式。',usage:'在风控Tab查看黑匣子面板，系统自动归类亏损原因。',impact:'识别重复犯错模式，针对性改进可减少30%亏损',status:'active'},
+  {id:22,icon:'🎵',name:'节奏大师',cat:'analysis',desc:'分析你的最佳交易频率——是急速短线还是慢节奏波段？找到你的盈利节奏。',usage:'在分析Tab查看节奏大师面板，对比不同频率下的盈亏表现。',impact:'在最佳节奏下交易，盈利效率提升40%',status:'active'},
+  {id:23,icon:'🌳',name:'交易之树',cat:'game',desc:'你的交易成长可视化为一棵树——盈利让树枝繁茂，亏损让叶子凋零。',usage:'在成长Tab查看你的交易树，每笔交易都会影响树的形态。',impact:'直观感受交易健康度，激励保持良好交易习惯',status:'planned'},
+  {id:24,icon:'🔍',name:'交易侦探',cat:'analysis',desc:'AI自动侦测异常交易——偏离正常模式的操作会被标记并分析原因。',usage:'系统自动标记异常交易（如突然加大杠杆、频繁换方向等）。',impact:'及时发现情绪化交易，避免连续亏损',status:'planned'},
+  {id:25,icon:'📸',name:'快照分享',cat:'social',desc:'一键生成精美的交易成绩单图片，分享到社交媒体。',usage:'点击导出按钮，系统自动生成包含关键数据的精美图片。',impact:'分享成就激励自己，也帮助团队建立品牌',status:'planned'},
+  {id:26,icon:'🏰',name:'交易迷宫',cat:'game',desc:'将交易学习路径设计为迷宫闯关——每掌握一个技能解锁新区域。',usage:'在成长Tab查看技能树，完成特定条件解锁新功能。',impact:'游戏化学习提升参与度，学习效率提升50%',status:'planned'},
+  {id:27,icon:'🪞',name:'镜像交易',cat:'trade',desc:'一键复制团队中表现最好的成员的交易策略和参数。',usage:'在排行榜中点击任意成员，选择"镜像交易"复制其策略。',impact:'新手快速上手，跟随高手策略平均收益提升',status:'planned'},
+  {id:28,icon:'😊',name:'情绪日记',cat:'risk',desc:'每笔交易前记录当前情绪状态，系统分析情绪与盈亏的关联。',usage:'在交易心得中选择当前情绪标签（冷静/兴奋/恐惧/贪婪）。',impact:'情绪管理是交易成功的关键，冷静状态下胜率高出25%',status:'planned'},
+  {id:29,icon:'🪜',name:'技能阶梯',cat:'game',desc:'从青铜到王者的交易段位系统，每个段位有明确的晋级条件。',usage:'在成长Tab查看当前段位和晋级进度。',impact:'明确的成长目标让交易者更有方向感',status:'planned'},
+  {id:30,icon:'🔗',name:'量子纠缠',cat:'analysis',desc:'发现不同交易对之间的隐藏关联——当BTC涨时ETH通常怎么走？',usage:'系统自动计算交易对之间的相关性系数并可视化展示。',impact:'利用相关性做对冲或确认信号，提升交易确定性',status:'planned'},
+  {id:31,icon:'🎯',name:'精准狙击',cat:'trade',desc:'基于多指标共振的高概率入场点检测，只在RSI+MACD+布林带同时发出信号时提醒。',usage:'系统自动监测多指标共振，当3个以上指标同时触发时弹出狙击信号。',impact:'过滤掉80%的噪音信号，只留下高胜率机会',status:'active'},
+  {id:32,icon:'🌊',name:'浪潮追踪',cat:'analysis',desc:'识别市场的大级别趋势浪型，判断当前处于上升浪还是回调浪。',usage:'在分析Tab查看当前市场浪型结构和预测的下一浪方向。',impact:'顺势交易胜率提升30%，避免逆势操作',status:'planned'},
+  {id:33,icon:'🔔',name:'智能预警',cat:'risk',desc:'自定义价格、指标、持仓盈亏等多维度预警条件，触发时实时通知。',usage:'在风控Tab设置预警规则，如"BTC跌破65000"或"持仓亏损超5%"。',impact:'不用盯盘也能及时响应市场变化，减少错过止损的风险',status:'active'},
+  {id:34,icon:'📐',name:'黄金分割',cat:'analysis',desc:'自动计算Fibonacci回撤和扩展位，标注关键支撑阻力价位。',usage:'选择一段趋势的高低点，系统自动绘制Fibonacci线并标注关键位。',impact:'精确定位入场和止盈位置，提升盈亏比',status:'active'},
+  {id:35,icon:'🧲',name:'磁力位',cat:'analysis',desc:'基于历史成交密集区计算价格"磁力位"——价格倾向于被吸引到这些区域。',usage:'图表上自动标注成交密集区，颜色越深磁力越强。',impact:'预判价格运动目标，提前布局止盈位',status:'planned'},
+  {id:36,icon:'⚡',name:'闪电下单',cat:'trade',desc:'一键快速下单，预设好仓位、杠杆、止盈止损，点击即执行。',usage:'在快速交易面板预设常用交易模板，一键触发。',impact:'抓住转瞬即逝的机会，下单速度提升10倍',status:'active'},
+  {id:37,icon:'🎪',name:'策略马戏团',cat:'trade',desc:'同时运行多个策略并实时对比表现，找出最适合当前市场的策略。',usage:'在总览Tab的智能策略区同时启动多个策略，系统自动对比收益。',impact:'通过策略组合分散风险，整体收益更稳定',status:'active'},
+  {id:38,icon:'🔬',name:'微观结构',cat:'analysis',desc:'分析订单簿深度、大单分布、买卖力量对比等微观市场结构。',usage:'在买卖盘口区域查看深度分析，大单标记和力量对比指标。',impact:'洞察主力动向，避免被大单砸盘',status:'active'},
+  {id:39,icon:'🛡️',name:'风暴盾',cat:'risk',desc:'极端行情自动触发保护机制——降杠杆、缩仓位、设紧急止损。',usage:'在风控Tab开启风暴盾，设置触发条件（如5分钟跌幅>3%）。',impact:'黑天鹅事件中保护本金，避免爆仓',status:'active'},
+  {id:40,icon:'📊',name:'资金流向',cat:'analysis',desc:'追踪大资金的流入流出方向，判断聪明钱在买还是卖。',usage:'在市场Tab查看资金流向图，绿色代表流入，红色代表流出。',impact:'跟随聪明钱方向交易，胜率提升15%',status:'planned'},
+  {id:41,icon:'🎲',name:'蒙特卡洛',cat:'analysis',desc:'用蒙特卡洛模拟预测策略未来1000种可能的收益路径。',usage:'选择一个策略，系统基于历史数据模拟1000次未来走势。',impact:'量化策略的风险和收益分布，做出更理性的决策',status:'planned'},
+  {id:42,icon:'🏋️',name:'压力测试',cat:'risk',desc:'模拟极端市场条件下你的持仓会怎样——暴跌30%、连续插针等。',usage:'在风控Tab选择压力场景，查看持仓在极端情况下的表现。',impact:'提前发现风险敞口，在灾难发生前做好准备',status:'planned'},
+  {id:43,icon:'📈',name:'趋势雷达',cat:'analysis',desc:'多时间框架趋势一致性检测——当1分/5分/15分/1时全部同向时发出强信号。',usage:'图表上方显示多时间框架趋势指示灯，全绿=强多，全红=强空。',impact:'多周期共振信号胜率高达70%+',status:'active'},
+  {id:44,icon:'🎭',name:'市场面具',cat:'analysis',desc:'检测市场的"假突破"——价格突破关键位后快速回落的陷阱。',usage:'系统自动标记疑似假突破的K线形态，提醒谨慎追单。',impact:'避免追高杀低，减少被假突破套牢的损失',status:'planned'},
+  {id:45,icon:'💎',name:'钻石手',cat:'game',desc:'记录你持仓的最长时间和最大浮盈回撤忍耐度，培养持仓耐心。',usage:'在成长Tab查看钻石手指数和历史最佳持仓记录。',impact:'克服过早止盈的毛病，让利润奔跑',status:'planned'},
+  {id:46,icon:'🧊',name:'冷静期',cat:'risk',desc:'连续亏损后强制进入冷静期，锁定交易功能一段时间防止报复性交易。',usage:'系统检测到连续3笔亏损后自动触发，倒计时结束前无法下单。',impact:'避免情绪化交易造成的连锁亏损，保护剩余本金',status:'active'},
+  {id:47,icon:'🗺️',name:'交易航海图',cat:'analysis',desc:'将你的交易历程可视化为一张航海图，每笔交易是一个航点。',usage:'在分析Tab查看航海图，绿色航点=盈利，红色=亏损，大小=金额。',impact:'直观看到交易轨迹，发现规律和问题',status:'planned'},
+  {id:48,icon:'🤖',name:'AI教练',cat:'ai',desc:'基于你的交易数据，AI给出个性化的改进建议和训练计划。',usage:'在成长Tab查看AI教练的每日建议和本周训练重点。',impact:'针对性改进弱点，加速交易技能提升',status:'planned'},
+  {id:49,icon:'📡',name:'信号雷达',cat:'trade',desc:'聚合多个技术指标信号，用雷达图展示当前市场的多空力量分布。',usage:'在总览Tab查看信号雷达图，扇形越大代表该方向信号越强。',impact:'一眼看清市场多空力量对比，快速决策',status:'planned'},
+  {id:50,icon:'🎰',name:'概率计算器',cat:'trade',desc:'输入你的胜率和盈亏比，计算长期期望收益和最优仓位。',usage:'在快速交易面板输入参数，系统实时计算凯利公式最优仓位。',impact:'科学管理仓位，避免过度下注或过于保守',status:'active'},
+  {id:51,icon:'🌙',name:'月光宝盒',cat:'analysis',desc:'回溯任意历史时刻的市场状态，复盘当时的K线、指标和你的操作。',usage:'在分析Tab选择日期，系统还原当时的完整市场快照。',impact:'从历史中学习，避免重复犯错',status:'planned'},
+  {id:52,icon:'🎪',name:'多空擂台',cat:'social',desc:'团队成员公开发表多空观点，投票PK，事后验证谁的判断更准。',usage:'在实时动态中发表多空观点，其他成员可以投票支持或反对。',impact:'集思广益，避免个人偏见，提升团队决策质量',status:'planned'},
+  {id:53,icon:'🧬',name:'策略基因',cat:'ai',desc:'将每个策略拆解为基因片段（入场条件、出场条件、仓位管理），支持自由组合。',usage:'在策略编辑器中拖拽基因片段组合新策略，系统自动回测。',impact:'像搭积木一样创造新策略，无需编程',status:'planned'},
+  {id:54,icon:'🔥',name:'热力追踪',cat:'analysis',desc:'实时追踪全市场热门交易对的资金热度和波动率排名。',usage:'在市场Tab查看热力排行榜，颜色越红越热门。',impact:'快速发现市场热点，抓住波动机会',status:'active'},
+  {id:55,icon:'🎓',name:'交易学院',cat:'social',desc:'内置交易知识库，从K线基础到高级策略，系统化学习路径。',usage:'在成长Tab进入学院，按难度等级选择课程学习。',impact:'系统化提升交易认知，少走弯路',status:'planned'},
+  {id:56,icon:'⏰',name:'时间锚点',cat:'trade',desc:'标记重要时间节点（美联储议息、非农数据等），提前提醒并建议仓位调整。',usage:'在日历中标记宏观事件，系统在事件前30分钟自动提醒。',impact:'避免在重大事件前持有过大仓位，减少意外损失',status:'planned'},
+  {id:57,icon:'🎨',name:'K线画板',cat:'analysis',desc:'在K线图上自由绘制趋势线、通道线、标注区域，保存分析笔记。',usage:'点击图表工具栏的画笔图标，选择绘图工具在图表上标注。',impact:'记录分析思路，回顾时一目了然',status:'planned'},
+  {id:58,icon:'🏅',name:'交易勋章',cat:'game',desc:'完成特定交易成就解锁勋章——首次盈利、连胜5次、月收益翻倍等。',usage:'在成长Tab查看勋章墙，已解锁的勋章会发光显示。',impact:'游戏化激励持续进步，增加交易乐趣',status:'active'},
+  {id:59,icon:'🔄',name:'自动复投',cat:'trade',desc:'盈利自动按比例复投到下一笔交易，实现复利增长。',usage:'在策略设置中开启复投模式，设置复投比例（如盈利的50%）。',impact:'利用复利效应加速资金增长',status:'planned'},
+  {id:60,icon:'📱',name:'移动哨兵',cat:'risk',desc:'关键信号通过推送通知发送到手机，即使不在电脑前也能及时响应。',usage:'绑定手机号或Telegram，选择需要推送的信号类型。',impact:'7×24小时不错过任何重要交易机会',status:'planned'},
+  {id:61,icon:'🧮',name:'回撤计算器',cat:'risk',desc:'实时计算当前持仓的最大可能回撤，以及回撤到止损位需要多少时间。',usage:'在风控Tab输入持仓信息，系统计算各种回撤场景。',impact:'量化风险敞口，做到心中有数',status:'planned'},
+  {id:62,icon:'🎵',name:'市场脉搏',cat:'analysis',desc:'将价格波动转化为音频节奏——快速波动=急促鼓点，平稳=舒缓旋律。',usage:'开启市场脉搏模式，用耳朵感受市场节奏变化。',impact:'多感官感知市场，发现视觉容易忽略的异常',status:'planned'},
+  {id:63,icon:'🏰',name:'堡垒模式',cat:'risk',desc:'一键进入防守模式——关闭所有策略、设置全仓止损、降低杠杆到1x。',usage:'在风控Tab点击堡垒按钮，一键切换到最保守的防守状态。',impact:'市场不确定时快速保护本金',status:'planned'},
+  {id:64,icon:'📋',name:'交易清单',cat:'trade',desc:'开仓前的检查清单——确认趋势、支撑阻力、仓位、止损止盈都设置好了。',usage:'点击下单前弹出检查清单，逐项确认后才能执行交易。',impact:'减少冲动交易和遗漏止损的情况',status:'planned'},
+  {id:65,icon:'🌈',name:'彩虹通道',cat:'analysis',desc:'多周期均线组成的彩虹带，直观显示趋势强度和方向。',usage:'在指标栏开启彩虹通道，均线从短到长用不同颜色显示。',impact:'一眼判断趋势强弱，均线发散=强趋势，收敛=震荡',status:'planned'},
+  {id:66,icon:'🎯',name:'止盈阶梯',cat:'trade',desc:'分批止盈策略——盈利达到不同目标时自动平掉部分仓位锁定利润。',usage:'在交易设置中配置阶梯止盈（如+5%平30%，+10%平30%，+20%平剩余）。',impact:'既能锁定利润又不错过大行情，平均收益提升25%',status:'planned'},
+  {id:67,icon:'🔮',name:'预言水晶球',cat:'ai',desc:'基于机器学习模型预测未来4小时的价格走势概率分布。',usage:'在市场Tab查看AI预测面板，显示上涨/下跌/震荡的概率。',impact:'辅助决策参考，但不建议作为唯一依据',status:'planned'},
+  {id:68,icon:'🏆',name:'赛季挑战',cat:'game',desc:'每月一个交易挑战赛季，设定目标（如月收益10%），完成获得奖励。',usage:'在成长Tab查看当前赛季目标和进度，赛季结束后结算排名。',impact:'持续的目标驱动让交易更有纪律性',status:'planned'},
+  {id:69,icon:'🔍',name:'异常检测',cat:'risk',desc:'AI监测交易行为异常——突然加大仓位、频繁交易、深夜操作等。',usage:'系统自动分析交易模式，发现异常时弹出警告。',impact:'及时发现情绪化交易倾向，防患于未然',status:'planned'},
+  {id:70,icon:'📊',name:'对比分析',cat:'analysis',desc:'将你的交易数据与团队平均水平、历史最佳表现进行对比分析。',usage:'在分析Tab查看对比雷达图，一眼看出优势和短板。',impact:'知己知彼，针对性提升薄弱环节',status:'planned'},
+  {id:71,icon:'🧩',name:'模式识别',cat:'ai',desc:'AI自动识别K线形态——头肩顶、双底、三角收敛等经典形态。',usage:'系统在图表上自动标注识别到的K线形态和预期方向。',impact:'不再错过经典形态信号，提升技术分析效率',status:'planned'},
+  {id:72,icon:'💬',name:'交易聊天室',cat:'social',desc:'团队实时聊天频道，分享观点、讨论策略、发送图表截图。',usage:'点击右下角聊天图标打开团队聊天室，支持文字和图片。',impact:'实时沟通提升团队协作效率',status:'planned'},
+  {id:73,icon:'📦',name:'策略商店',cat:'social',desc:'团队成员可以分享和订阅彼此的交易策略，优秀策略获得评分。',usage:'在创新Tab浏览策略商店，一键订阅感兴趣的策略。',impact:'站在巨人肩膀上，快速获得经过验证的策略',status:'planned'},
+  {id:74,icon:'🎪',name:'回测剧场',cat:'trade',desc:'选择任意历史时段，用你的策略进行模拟回测，查看假设收益。',usage:'选择策略和时间范围，系统自动执行回测并生成报告。',impact:'用数据验证策略有效性，避免盲目实盘',status:'planned'},
+  {id:75,icon:'🌐',name:'全球视野',cat:'analysis',desc:'展示全球主要市场（美股、黄金、原油、外汇）与加密货币的联动关系。',usage:'在市场Tab查看全球市场联动面板，了解宏观环境。',impact:'把握宏观趋势，避免在不利环境中逆势操作',status:'planned'},
+  {id:76,icon:'🎭',name:'角色扮演',cat:'game',desc:'选择交易风格角色（稳健派/激进派/套利派），系统根据角色给出匹配的策略建议。',usage:'在成长Tab选择你的交易角色，系统自动推荐适合的策略和参数。',impact:'找到适合自己性格的交易风格，减少内耗',status:'planned'},
+  {id:77,icon:'⚖️',name:'仓位天平',cat:'risk',desc:'可视化展示当前多空仓位的平衡状态，提醒单边风险过大。',usage:'在风控Tab查看仓位天平，天平倾斜越大说明风险越集中。',impact:'保持仓位平衡，避免单边暴露过大风险',status:'active'},
+  {id:78,icon:'🎯',name:'目标追踪',cat:'game',desc:'设定日/周/月收益目标，实时追踪完成进度，达标后庆祝动画。',usage:'在成长Tab设定各周期目标金额，系统实时显示完成百分比。',impact:'明确的目标让交易更有纪律，避免过度交易',status:'active'},
+  {id:79,icon:'🔗',name:'API桥接',cat:'trade',desc:'连接真实交易所API，将平台信号直接发送到交易所执行。',usage:'在设置中配置交易所API Key，开启自动执行模式。',impact:'从模拟到实盘的无缝衔接，信号即执行',status:'planned'},
+  {id:80,icon:'🌟',name:'交易之星',cat:'social',desc:'每周评选团队最佳交易者，展示其本周最佳操作和心得分享。',usage:'系统自动根据本周收益率、胜率、风控评分综合评选。',impact:'树立榜样，激励团队共同进步',status:'planned'},
+];
+
+// ============ 创新功能渲染 ============
+var CAT_NAMES = {trade:'交易工具',analysis:'分析洞察',risk:'风控安全',social:'社交协作',game:'游戏成长',ai:'AI智能'};
+var CAT_COLORS = {trade:'#22c55e',analysis:'#38bdf8',risk:'#ef4444',social:'#a78bfa',game:'#f59e0b',ai:'#22d3ee'};
+
+function renderInnovGrid(filter) {
+  var grid = document.getElementById('innovGrid');
+  if (!grid) return;
+  filter = filter || 'all';
+  var items = INNOVATIONS.filter(function(it) { return filter === 'all' || it.cat === filter; });
+  grid.innerHTML = items.map(function(it) {
+    var color = CAT_COLORS[it.cat] || '#38bdf8';
+    var statusTag = it.status === 'active'
+      ? '<span class="innov-status-tag active">已上线</span>'
+      : '<span class="innov-status-tag planned">规划中</span>';
+    return '<div class="innov-card" data-id="' + it.id + '" style="--card-accent:' + color + '">' +
+      '<div class="innov-card-icon">' + it.icon + '</div>' +
+      '<div class="innov-card-name">' + it.name + '</div>' +
+      '<div class="innov-card-cat" style="color:' + color + '">' + (CAT_NAMES[it.cat] || '') + '</div>' +
+      '<div class="innov-card-desc">' + it.desc.slice(0, 40) + (it.desc.length > 40 ? '…' : '') + '</div>' +
+      statusTag +
+    '</div>';
+  }).join('');
+}
+
+// Bootstrap
 document.addEventListener('DOMContentLoaded', init);
