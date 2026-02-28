@@ -47,6 +47,127 @@ const indicators = { ma7: true, ma25: true, boll: false, rsi: false, macd: false
 let tradeMarkers = [];
 
 // ============================================================
+// Trading Journal System (localStorage persistence)
+// ============================================================
+
+var JOURNAL_KEY = 'teamtrade_journal';
+
+function loadJournal() {
+  try {
+    var raw = localStorage.getItem(JOURNAL_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch(e) { return []; }
+}
+
+function saveJournal(journal) {
+  try { localStorage.setItem(JOURNAL_KEY, JSON.stringify(journal)); } catch(e) {}
+}
+
+function addJournalEntry(entry) {
+  var journal = loadJournal();
+  entry.id = Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+  entry.timestamp = new Date().toISOString();
+  entry.status = entry.status || 'open';
+  entry.closePrice = null;
+  entry.closedAt = null;
+  entry.pnl = null;
+  entry.pnlPct = null;
+  journal.unshift(entry);
+  saveJournal(journal);
+  return entry;
+}
+
+function closeJournalEntry(id, closePrice, closeNote) {
+  var journal = loadJournal();
+  for (var i = 0; i < journal.length; i++) {
+    if (journal[i].id === id && journal[i].status === 'open') {
+      journal[i].status = 'closed';
+      journal[i].closePrice = parseFloat(closePrice);
+      journal[i].closedAt = new Date().toISOString();
+      journal[i].closeNote = closeNote || '';
+      var entry = parseFloat(journal[i].entryPrice);
+      var exit = journal[i].closePrice;
+      var qty = parseFloat(journal[i].amount) || 1;
+      var lev = parseFloat(journal[i].leverage) || 1;
+      if (journal[i].side === 'long') {
+        journal[i].pnl = (exit - entry) * qty * lev;
+      } else {
+        journal[i].pnl = (entry - exit) * qty * lev;
+      }
+      journal[i].pnlPct = entry > 0 ? ((journal[i].pnl / (entry * qty)) * 100) : 0;
+      break;
+    }
+  }
+  saveJournal(journal);
+}
+
+function deleteJournalEntry(id) {
+  var journal = loadJournal();
+  journal = journal.filter(function(e) { return e.id !== id; });
+  saveJournal(journal);
+}
+
+// ============================================================
+// Strategy Analytics
+// ============================================================
+
+function calcStrategyStats() {
+  var journal = loadJournal();
+  var closed = journal.filter(function(e) { return e.status === 'closed'; });
+  var stratMap = {};
+
+  closed.forEach(function(e) {
+    var key = e.strategy || '未分类';
+    if (!stratMap[key]) {
+      stratMap[key] = { name: key, total: 0, wins: 0, losses: 0, totalPnl: 0, trades: [] };
+    }
+    var s = stratMap[key];
+    s.total++;
+    s.totalPnl += (e.pnl || 0);
+    if (e.pnl > 0) s.wins++;
+    else s.losses++;
+    s.trades.push(e);
+  });
+
+  var stats = Object.keys(stratMap).map(function(k) {
+    var s = stratMap[k];
+    s.winRate = s.total > 0 ? (s.wins / s.total * 100) : 0;
+    s.avgPnl = s.total > 0 ? (s.totalPnl / s.total) : 0;
+    return s;
+  });
+
+  stats.sort(function(a, b) { return b.totalPnl - a.totalPnl; });
+  return stats;
+}
+
+function calcOverallStats() {
+  var journal = loadJournal();
+  var closed = journal.filter(function(e) { return e.status === 'closed'; });
+  var open = journal.filter(function(e) { return e.status === 'open'; });
+  var totalPnl = 0, wins = 0, losses = 0, maxWin = 0, maxLoss = 0;
+
+  closed.forEach(function(e) {
+    var p = e.pnl || 0;
+    totalPnl += p;
+    if (p > 0) { wins++; if (p > maxWin) maxWin = p; }
+    else { losses++; if (p < maxLoss) maxLoss = p; }
+  });
+
+  return {
+    totalTrades: journal.length,
+    openTrades: open.length,
+    closedTrades: closed.length,
+    totalPnl: totalPnl,
+    winRate: closed.length > 0 ? (wins / closed.length * 100) : 0,
+    wins: wins,
+    losses: losses,
+    maxWin: maxWin,
+    maxLoss: maxLoss,
+    avgPnl: closed.length > 0 ? (totalPnl / closed.length) : 0
+  };
+}
+
+// ============================================================
 // Technical Indicator Calculation Functions
 // ============================================================
 
@@ -396,6 +517,26 @@ function pushAutoSignal(bar) {
   });
   if (SIGNALS.length > 50) SIGNALS.length = 50;
   renderSignals();
+
+  // Write auto signal to journal
+  var stratName = last.reason.indexOf('MA') >= 0 ? '均线交叉策略' :
+    last.reason.indexOf('RSI') >= 0 ? 'RSI反转策略' :
+    last.reason.indexOf('MACD') >= 0 ? 'MACD趋势策略' :
+    last.reason.indexOf('布林') >= 0 ? '布林带突破策略' : '自动策略';
+  addJournalEntry({
+    side: last.type === 'buy' ? 'long' : 'short',
+    symbol: currentSymbol,
+    entryPrice: last.price,
+    amount: '0',
+    leverage: '1',
+    strategy: stratName,
+    method: last.reason,
+    note: '自动信号触发 · ' + text,
+    member: member.name,
+    source: 'auto'
+  });
+  renderJournal();
+  renderAnalytics();
 }
 
 // ============================================================
@@ -833,6 +974,149 @@ function renderSignals(filter) {
 }
 
 // ============================================================
+// Rendering - Trading Journal
+// ============================================================
+
+function renderJournal(filterStrat) {
+  var el = document.getElementById('journalList');
+  if (!el) return;
+  var journal = loadJournal();
+  if (filterStrat && filterStrat !== 'all') {
+    journal = journal.filter(function(e) { return e.strategy === filterStrat; });
+  }
+  if (journal.length === 0) {
+    el.innerHTML = '<div class="journal-empty">暂无交易记录</div>';
+    return;
+  }
+  var html = '';
+  journal.forEach(function(e) {
+    var sideCls = e.side === 'long' ? 'j-long' : 'j-short';
+    var sideText = e.side === 'long' ? 'LONG' : 'SHORT';
+    var statusCls = e.status === 'open' ? 'j-open' : 'j-closed';
+    var statusText = e.status === 'open' ? '持仓中' : '已平仓';
+    var dt = new Date(e.timestamp);
+    var timeStr = dt.toLocaleDateString('zh-CN') + ' ' + dt.toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'});
+    var pnlHtml = '';
+    if (e.status === 'closed' && e.pnl !== null) {
+      var pCls = e.pnl >= 0 ? 'green' : 'red';
+      var pSign = e.pnl >= 0 ? '+' : '';
+      pnlHtml = '<span class="j-pnl ' + pCls + '">' + pSign + '$' + e.pnl.toFixed(2) + ' (' + pSign + e.pnlPct.toFixed(1) + '%)</span>';
+    }
+    var srcIcon = e.source === 'auto' ? '🤖' : '👤';
+
+    html += '<div class="journal-row">';
+    html += '<div class="j-head">';
+    html += '<span class="j-side ' + sideCls + '">' + sideText + '</span>';
+    html += '<span class="j-symbol">' + (e.symbol || '--') + '</span>';
+    html += '<span class="j-status ' + statusCls + '">' + statusText + '</span>';
+    html += '<span class="j-src">' + srcIcon + '</span>';
+    html += '<span class="j-time">' + timeStr + '</span>';
+    html += '</div>';
+    html += '<div class="j-body">';
+    html += '<div class="j-detail">';
+    html += '<span>入场: $' + formatPrice(e.entryPrice) + '</span>';
+    if (e.amount && e.amount !== '0') html += '<span>数量: ' + e.amount + '</span>';
+    if (e.leverage && e.leverage !== '1') html += '<span>杠杆: ' + e.leverage + 'x</span>';
+    if (e.closePrice) html += '<span>平仓: $' + formatPrice(e.closePrice) + '</span>';
+    html += pnlHtml;
+    html += '</div>';
+    html += '<div class="j-strat">策略: <b>' + (e.strategy || '--') + '</b>';
+    if (e.method) html += ' · 方法: ' + e.method;
+    html += '</div>';
+    if (e.note) html += '<div class="j-note">' + e.note + '</div>';
+    if (e.closeNote) html += '<div class="j-note">平仓心得: ' + e.closeNote + '</div>';
+    html += '</div>';
+    html += '<div class="j-actions">';
+    if (e.status === 'open') {
+      html += '<button class="j-btn j-close-btn" data-id="' + e.id + '">平仓</button>';
+    }
+    html += '<button class="j-btn j-del-btn" data-id="' + e.id + '">删除</button>';
+    html += '</div>';
+    html += '</div>';
+  });
+  el.innerHTML = html;
+  bindJournalActions();
+}
+
+function bindJournalActions() {
+  // Close position buttons
+  document.querySelectorAll('.j-close-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var id = btn.getAttribute('data-id');
+      var key = SYMBOL_MAP[currentSymbol] ? SYMBOL_MAP[currentSymbol].toUpperCase() : '';
+      var curPrice = tickerData[key] ? tickerData[key].price : '0';
+      var closeNote = prompt('平仓心得（可选）：', '');
+      closeJournalEntry(id, curPrice, closeNote || '');
+      renderJournal();
+      renderAnalytics();
+    });
+  });
+  // Delete buttons
+  document.querySelectorAll('.j-del-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var id = btn.getAttribute('data-id');
+      if (confirm('确认删除此交易记录？')) {
+        deleteJournalEntry(id);
+        renderJournal();
+        renderAnalytics();
+      }
+    });
+  });
+}
+
+// ============================================================
+// Rendering - Strategy Analytics
+// ============================================================
+
+function renderAnalytics() {
+  var statsEl = document.getElementById('analyticsStats');
+  var listEl = document.getElementById('analyticsList');
+  if (!statsEl && !listEl) return;
+
+  var overall = calcOverallStats();
+  var stratStats = calcStrategyStats();
+
+  if (statsEl) {
+    var pCls = overall.totalPnl >= 0 ? 'green' : 'red';
+    var pSign = overall.totalPnl >= 0 ? '+' : '';
+    statsEl.innerHTML =
+      '<div class="a-stat"><div class="a-val">' + overall.totalTrades + '</div><div class="a-label">总交易</div></div>' +
+      '<div class="a-stat"><div class="a-val">' + overall.openTrades + '</div><div class="a-label">持仓中</div></div>' +
+      '<div class="a-stat"><div class="a-val ' + pCls + '">' + pSign + '$' + overall.totalPnl.toFixed(2) + '</div><div class="a-label">总盈亏</div></div>' +
+      '<div class="a-stat"><div class="a-val">' + overall.winRate.toFixed(1) + '%</div><div class="a-label">胜率</div></div>' +
+      '<div class="a-stat"><div class="a-val green">+$' + overall.maxWin.toFixed(2) + '</div><div class="a-label">最大盈利</div></div>' +
+      '<div class="a-stat"><div class="a-val red">-$' + Math.abs(overall.maxLoss).toFixed(2) + '</div><div class="a-label">最大亏损</div></div>';
+  }
+
+  if (listEl) {
+    if (stratStats.length === 0) {
+      listEl.innerHTML = '<div class="journal-empty">暂无已平仓数据</div>';
+      return;
+    }
+    var html = '';
+    stratStats.forEach(function(s) {
+      var pCls = s.totalPnl >= 0 ? 'green' : 'red';
+      var pSign = s.totalPnl >= 0 ? '+' : '';
+      var barW = Math.min(100, s.winRate);
+      html += '<div class="a-row">';
+      html += '<div class="a-row-head">';
+      html += '<span class="a-name">' + s.name + '</span>';
+      html += '<span class="a-pnl ' + pCls + '">' + pSign + '$' + s.totalPnl.toFixed(2) + '</span>';
+      html += '</div>';
+      html += '<div class="a-row-body">';
+      html += '<span>交易 ' + s.total + ' 次</span>';
+      html += '<span>胜 ' + s.wins + ' / 负 ' + s.losses + '</span>';
+      html += '<span>胜率 ' + s.winRate.toFixed(1) + '%</span>';
+      html += '<span>均盈 ' + (s.avgPnl >= 0 ? '+' : '') + '$' + s.avgPnl.toFixed(2) + '</span>';
+      html += '</div>';
+      html += '<div class="a-bar-wrap"><div class="a-bar" style="width:' + barW + '%;background:' + (s.totalPnl >= 0 ? 'var(--green)' : 'var(--red)') + '"></div></div>';
+      html += '</div>';
+    });
+    listEl.innerHTML = html;
+  }
+}
+
+// ============================================================
 // Interaction - Switch Symbol
 // ============================================================
 
@@ -943,13 +1227,35 @@ function initInteractions() {
       var side = btnBuy && btnBuy.classList.contains('active') ? 'long' : 'short';
       var priceEl = document.getElementById('tradePrice');
       var amountEl = document.getElementById('tradeAmount');
-      var price = priceEl ? priceEl.value : '0';
+      var stratEl = document.getElementById('tradeStrategy');
+      var methodEl = document.getElementById('tradeMethod');
+      var noteEl = document.getElementById('tradeNote');
+      var price = priceEl ? priceEl.value.replace(/,/g, '') : '0';
       var amount = amountEl ? amountEl.value : '0';
+      var strategy = stratEl ? stratEl.value : '手动交易';
+      var method = methodEl ? methodEl.value : '';
+      var note = noteEl ? noteEl.value : '';
+      var leverage = levSlider ? levSlider.value : '1';
       var member = TEAM[Math.floor(Math.random() * TEAM.length)];
       var direction = side === 'long' ? '买入' : '卖出';
+
+      // Write to journal
+      addJournalEntry({
+        side: side,
+        symbol: currentSymbol,
+        entryPrice: price,
+        amount: amount,
+        leverage: leverage,
+        strategy: strategy,
+        method: method,
+        note: note,
+        member: member.name,
+        source: 'manual'
+      });
+
       SIGNALS.unshift({
         type: side,
-        text: direction + ' ' + currentSymbol + ' @ $' + price + ' x ' + amount,
+        text: direction + ' ' + currentSymbol + ' @ $' + formatPrice(price) + ' x ' + amount + ' [' + strategy + ']',
         member: member.name,
         init: member.init,
         color: member.color,
@@ -958,6 +1264,12 @@ function initInteractions() {
       });
       if (SIGNALS.length > 50) SIGNALS.length = 50;
       renderSignals();
+      renderJournal();
+      renderAnalytics();
+
+      // Clear note field after trade
+      if (noteEl) noteEl.value = '';
+      if (methodEl) methodEl.value = '';
     });
   }
 
@@ -1007,6 +1319,40 @@ function initInteractions() {
     }
   });
 
+  // Journal filter dropdown
+  var jFilter = document.getElementById('journalFilter');
+  if (jFilter) {
+    jFilter.addEventListener('change', function() {
+      renderJournal(jFilter.value);
+    });
+  }
+
+  // Export journal to CSV
+  var btnExport = document.getElementById('btnExportJournal');
+  if (btnExport) {
+    btnExport.addEventListener('click', function() {
+      var journal = loadJournal();
+      if (journal.length === 0) { alert('暂无交易记录'); return; }
+      var header = '时间,方向,交易对,入场价,数量,杠杆,策略,方法,心得,状态,平仓价,盈亏,盈亏%,来源\n';
+      var rows = journal.map(function(e) {
+        return [
+          e.timestamp, e.side, e.symbol, e.entryPrice, e.amount, e.leverage,
+          '"' + (e.strategy || '') + '"', '"' + (e.method || '') + '"',
+          '"' + (e.note || '').replace(/"/g, '""') + '"',
+          e.status, e.closePrice || '', e.pnl !== null ? e.pnl.toFixed(2) : '',
+          e.pnlPct !== null ? e.pnlPct.toFixed(1) : '', e.source
+        ].join(',');
+      }).join('\n');
+      var blob = new Blob(['\uFEFF' + header + rows], { type: 'text/csv;charset=utf-8;' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'trading_journal_' + new Date().toISOString().slice(0, 10) + '.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+
   // Window resize - redraw chart
   window.addEventListener('resize', function() {
     drawKline();
@@ -1026,6 +1372,8 @@ function init() {
   // Render static content
   renderStrategies();
   renderSignals();
+  renderJournal();
+  renderAnalytics();
 
   // Fetch initial ticker data
   fetchAllTickers(function() {

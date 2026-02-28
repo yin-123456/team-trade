@@ -236,10 +236,62 @@
         <div class="cost-line"><span>预估成本</span><span id="estCost">--</span></div>
         <div class="cost-line"><span>手续费</span><span>≈ $2.40</span></div>
       </div>
+      <div class="field">
+        <label>交易策略</label>
+        <select class="input" id="tradeStrategy">
+          <option>手动交易</option>
+          <option>均线交叉策略</option>
+          <option>布林带突破策略</option>
+          <option>RSI反转策略</option>
+          <option>MACD趋势策略</option>
+          <option>网格交易策略</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>开仓方法</label>
+        <input type="text" class="input" placeholder="如：突破前高回踩确认" id="tradeMethod">
+      </div>
+      <div class="field">
+        <label>交易心得</label>
+        <textarea class="input j-textarea" placeholder="记录你的交易逻辑和思考..." id="tradeNote"></textarea>
+      </div>
       <button class="btn-exec buy" id="btnExecute">确认买入</button>
     </div>
   </section>
 </main>
+
+<!-- 交易日志 -->
+<section class="journal-section">
+  <div class="card journal-card">
+    <div class="card-head">
+      <h2 class="card-title">📒 交易日志</h2>
+      <div class="j-filter-group">
+        <select class="chip-select" id="journalFilter">
+          <option value="all">全部策略</option>
+          <option>均线交叉策略</option>
+          <option>布林带突破策略</option>
+          <option>RSI反转策略</option>
+          <option>MACD趋势策略</option>
+          <option>网格交易策略</option>
+          <option>手动交易</option>
+        </select>
+        <button class="btn-primary-sm" id="btnExportJournal">导出CSV</button>
+      </div>
+    </div>
+    <div class="journal-list" id="journalList"></div>
+  </div>
+</section>
+
+<!-- 策略分析 -->
+<section class="analytics-section">
+  <div class="card analytics-card">
+    <div class="card-head">
+      <h2 class="card-title">📊 策略分析</h2>
+    </div>
+    <div class="analytics-stats" id="analyticsStats"></div>
+    <div class="analytics-list" id="analyticsList"></div>
+  </div>
+</section>
 
 <!-- 新策略弹窗 -->
 <div class="modal-overlay" id="modalOverlay">
