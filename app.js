@@ -1,4 +1,63 @@
 // ============================================================
+// Particle Canvas Background (Meta Whale style)
+// ============================================================
+(function initParticles() {
+  const canvas = document.getElementById('particles');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let w, h, particles = [];
+
+  function resize() {
+    w = canvas.width = window.innerWidth;
+    h = canvas.height = window.innerHeight;
+  }
+
+  function createParticles() {
+    particles = [];
+    const count = Math.floor((w * h) / 18000);
+    for (let i = 0; i < count; i++) {
+      particles.push({
+        x: Math.random() * w, y: Math.random() * h,
+        r: Math.random() * 1.5 + 0.3,
+        dx: (Math.random() - 0.5) * 0.3,
+        dy: (Math.random() - 0.5) * 0.3,
+        opacity: Math.random() * 0.5 + 0.1,
+        pulse: Math.random() * Math.PI * 2
+      });
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, w, h);
+    particles.forEach(p => {
+      p.x += p.dx; p.y += p.dy; p.pulse += 0.02;
+      if (p.x < 0) p.x = w; if (p.x > w) p.x = 0;
+      if (p.y < 0) p.y = h; if (p.y > h) p.y = 0;
+      const alpha = p.opacity * (0.6 + 0.4 * Math.sin(p.pulse));
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(34, 211, 238, ${alpha})`;
+      ctx.fill();
+    });
+    requestAnimationFrame(draw);
+  }
+
+  resize(); createParticles(); draw();
+  window.addEventListener('resize', () => { resize(); createParticles(); });
+})();
+
+// ============================================================
+// Nav Scroll Effect
+// ============================================================
+(function initNavScroll() {
+  const topbar = document.querySelector('.topbar');
+  if (!topbar) return;
+  window.addEventListener('scroll', () => {
+    topbar.classList.toggle('scrolled', window.scrollY > 30);
+  });
+})();
+
+// ============================================================
 // TeamTrade Dashboard - app.js
 // Real-time trading dashboard with Binance WebSocket/REST API
 // ============================================================
