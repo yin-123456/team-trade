@@ -1642,6 +1642,41 @@ function updateStatsCards() {
   if (rsEl) rsEl.textContent = runCount + ' 个策略运行中';
 }
 
+// ============ 团队资金总览 ============
+function renderFundOverview() {
+  var el = document.getElementById('fundOverview');
+  if (!el) return;
+  var totalBal = 0, totalMargin = 0, totalAvail = 0;
+  var html = '<div class="fund-members">';
+
+  TEAM.forEach(function(m) {
+    var acc = TT.getAccount(m.name);
+    if (!acc) return;
+    totalBal += acc.walletBalance;
+    totalMargin += acc.usedMargin;
+    totalAvail += acc.walletBalance - acc.usedMargin;
+
+    var usedPct = acc.walletBalance > 0 ? (acc.usedMargin / acc.walletBalance * 100) : 0;
+    var cls = usedPct > 80 ? 'red' : usedPct > 50 ? 'amber' : 'green';
+
+    html += '<div class="fund-member">';
+    html += '<span class="fund-avatar" style="background:' + m.color + '">' + m.init + '</span>';
+    html += '<span class="fund-name">' + m.name + '</span>';
+    html += '<span class="fund-bal">$' + acc.walletBalance.toFixed(0) + '</span>';
+    html += '<div class="fund-bar-wrap"><div class="fund-bar ' + cls + '" style="width:' + Math.min(usedPct, 100).toFixed(0) + '%"></div></div>';
+    html += '<span class="fund-pct ' + cls + '">' + usedPct.toFixed(0) + '%</span>';
+    html += '</div>';
+  });
+
+  html += '</div>';
+  html += '<div class="fund-summary">';
+  html += '<span>总资金 $' + totalBal.toFixed(0) + '</span>';
+  html += '<span>已用 $' + totalMargin.toFixed(0) + '</span>';
+  html += '<span>可用 $' + totalAvail.toFixed(0) + '</span>';
+  html += '</div>';
+  el.innerHTML = html;
+}
+
 // ============================================================
 // Equity Curve + Drawdown
 // ============================================================
@@ -1818,11 +1853,14 @@ function init() {
   renderJournal();
   renderAnalytics();
   updateStatsCards();
+  renderFundOverview();
   renderEquityCurve();
   renderLeaderboard();
   renderRiskPanel();
   renderQuantDashboard();
   renderSentimentPanel();
+  renderMarketOverview();
+  renderLongShortPanel();
   renderShadowPanel();
   renderPuzzlePanel();
   renderBlackboxPanel();
@@ -1830,6 +1868,7 @@ function init() {
   renderHeatmapPanel();
   renderGamificationPanel();
   renderInnovGrid();
+  renderLeaderboard2();
 
   // Fetch initial ticker data
   fetchAllTickers(function() {
@@ -2488,6 +2527,7 @@ function fetchMarketData() {
         _marketData.fundingRate = (parseFloat(d.lastFundingRate) * 100).toFixed(4);
       }
       renderSentimentPanel();
+      renderMarketOverview();
     }).catch(function() {});
 
   // 2. 多空比
@@ -2498,6 +2538,8 @@ function fetchMarketData() {
         _marketData.longShortRatio = parseFloat(d[0].longShortRatio).toFixed(2);
       }
       renderSentimentPanel();
+      renderMarketOverview();
+      renderLongShortPanel();
     }).catch(function() {});
 
   // 3. 恐惧贪婪指数
@@ -2511,7 +2553,49 @@ function fetchMarketData() {
         };
       }
       renderSentimentPanel();
+      renderMarketOverview();
     }).catch(function() {});
+}
+
+// ============ 市场概览卡片 ============
+function renderMarketOverview() {
+  var el = document.getElementById('marketOverview');
+  if (!el) return;
+  var mp = _marketData.markPrice ? '$' + formatPrice(_marketData.markPrice) : '--';
+  var fr = _marketData.fundingRate || '--';
+  var frVal = parseFloat(_marketData.fundingRate) || 0;
+  var frCls = frVal > 0 ? 'green' : frVal < 0 ? 'red' : '';
+  var lsr = _marketData.longShortRatio || '--';
+  var fg = _marketData.fearGreed ? _marketData.fearGreed.value : '--';
+  var fgText = _marketData.fearGreed ? _marketData.fearGreed.text : '';
+  var fgCls = fg >= 60 ? 'green' : fg <= 40 ? 'red' : 'amber';
+
+  el.innerHTML = '<div class="mkt-cards">' +
+    '<div class="mkt-card"><div class="mkt-label">标记价格</div><div class="mkt-val">' + mp + '</div></div>' +
+    '<div class="mkt-card"><div class="mkt-label">资金费率</div><div class="mkt-val ' + frCls + '">' + fr + '%</div></div>' +
+    '<div class="mkt-card"><div class="mkt-label">多空比</div><div class="mkt-val">' + lsr + '</div></div>' +
+    '<div class="mkt-card"><div class="mkt-label">恐惧贪婪</div><div class="mkt-val ' + fgCls + '">' + fg + ' <small>' + fgText + '</small></div></div>' +
+  '</div>';
+}
+
+// ============ 多空力量对比面板 ============
+function renderLongShortPanel() {
+  var el = document.getElementById('longShortPanel');
+  if (!el) return;
+  var ratio = parseFloat(_marketData.longShortRatio) || 1;
+  var longPct = (ratio / (1 + ratio) * 100).toFixed(1);
+  var shortPct = (100 - parseFloat(longPct)).toFixed(1);
+
+  el.innerHTML = '<div class="ls-panel">' +
+    '<div class="ls-bar-wrap">' +
+      '<div class="ls-bar-long" style="width:' + longPct + '%">' + longPct + '% 多</div>' +
+      '<div class="ls-bar-short" style="width:' + shortPct + '%">' + shortPct + '% 空</div>' +
+    '</div>' +
+    '<div class="ls-info">' +
+      '<span>多空比: ' + ratio.toFixed(2) + '</span>' +
+      '<span>' + (ratio > 1 ? '🟢 多头占优' : ratio < 1 ? '🔴 空头占优' : '⚪ 均衡') + '</span>' +
+    '</div>' +
+  '</div>';
 }
 
 // ============================================================
@@ -2600,6 +2684,38 @@ var INNOVATIONS = [
   {id:79,icon:'🔗',name:'API桥接',cat:'trade',desc:'连接真实交易所API，将平台信号直接发送到交易所执行。',usage:'在设置中配置交易所API Key，开启自动执行模式。',impact:'从模拟到实盘的无缝衔接，信号即执行',status:'planned'},
   {id:80,icon:'🌟',name:'交易之星',cat:'social',desc:'每周评选团队最佳交易者，展示其本周最佳操作和心得分享。',usage:'系统自动根据本周收益率、胜率、风控评分综合评选。',impact:'树立榜样，激励团队共同进步',status:'planned'},
 ];
+
+// ============ 成就排行榜 (Growth Tab) ============
+function renderLeaderboard2() {
+  var el = document.getElementById('leaderboard2');
+  if (!el) return;
+  var html = '';
+
+  var board = TEAM.map(function(m) {
+    var exp = calcEXP(m.name);
+    var lv = getLevel(exp);
+    var stats = calcGameStats(m.name);
+    var unlocked = 0;
+    Object.keys(GAME_CONFIG.achievements).forEach(function(k) {
+      if (GAME_CONFIG.achievements[k].check(stats)) unlocked++;
+    });
+    return { name: m.name, init: m.init, color: m.color, level: lv.level, exp: exp, badges: unlocked };
+  });
+  board.sort(function(a, b) { return b.exp - a.exp; });
+
+  board.forEach(function(m, i) {
+    var medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1);
+    html += '<div class="lb-row">';
+    html += '<span class="lb-rank">' + medal + '</span>';
+    html += '<span class="lb-avatar" style="background:' + m.color + '">' + m.init + '</span>';
+    html += '<span class="lb-name">' + escapeHtml(m.name) + '</span>';
+    html += '<span class="lb-stat">Lv.' + m.level + ' · ' + m.badges + '🏅</span>';
+    html += '<span class="lb-pnl">' + m.exp + ' EXP</span>';
+    html += '</div>';
+  });
+  if (board.length === 0) html = '<div class="signal-empty">暂无成就数据</div>';
+  el.innerHTML = html;
+}
 
 // ============ 创新功能渲染 ============
 var CAT_NAMES = {trade:'交易工具',analysis:'分析洞察',risk:'风控安全',social:'社交协作',game:'游戏成长',ai:'AI智能'};
