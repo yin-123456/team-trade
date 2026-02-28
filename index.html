@@ -145,6 +145,16 @@
         <div class="chart-tags" id="chartTags"></div>
       </div>
     </div>
+    <!-- RSI 副图 -->
+    <div class="sub-chart-area" id="rsiChartArea" style="display:none">
+      <div class="sub-chart-label">RSI(14)</div>
+      <div class="sub-chart" id="rsiChart"></div>
+    </div>
+    <!-- MACD 副图 -->
+    <div class="sub-chart-area" id="macdChartArea" style="display:none">
+      <div class="sub-chart-label">MACD(12,26,9)</div>
+      <div class="sub-chart" id="macdChart"></div>
+    </div>
   </section>
 
   <!-- 右上：团队持仓 -->
@@ -227,8 +237,20 @@
         </div>
       </div>
       <div class="cost-box">
-        <div class="cost-line"><span>预估成本</span><span id="estCost">--</span></div>
-        <div class="cost-line"><span>手续费</span><span>≈ $2.40</span></div>
+        <div class="cost-line"><span>预估保证金</span><span id="estCost">--</span></div>
+        <div class="cost-line"><span>手续费(0.04%)</span><span id="estFee">≈ $0</span></div>
+        <div class="cost-line"><span>预估强平价</span><span id="estLiqPrice">--</span></div>
+      </div>
+      <!-- 交易天平 -->
+      <div class="balance-box" id="tradeBalanceBox" style="display:none">
+        <div class="balance-header">
+          <span class="balance-title">⚖️ 交易天平</span>
+          <span class="balance-score" id="balanceScore">--</span>
+        </div>
+        <div class="balance-body">
+          <div class="balance-col pros" id="balancePros"></div>
+          <div class="balance-col cons" id="balanceCons"></div>
+        </div>
       </div>
       <div class="field">
         <label>交易策略</label>
@@ -298,6 +320,38 @@
       <button class="btn-primary-sm" id="btnShadowTrade">+ 影子下单</button>
     </div>
     <div id="shadowPanel"></div>
+  </div>
+</section>
+
+<!-- 交易拼图 + 节奏大师 -->
+<section class="stats-row" style="margin-top:0">
+  <div class="card">
+    <div class="card-head"><h2 class="card-title">🧩 交易拼图</h2></div>
+    <div id="puzzlePanel"></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h2 class="card-title">🎵 节奏大师</h2></div>
+    <div id="rhythmPanel"></div>
+  </div>
+</section>
+
+<!-- 黑匣子 + 时段热力图 -->
+<section class="stats-row" style="margin-top:0">
+  <div class="card">
+    <div class="card-head"><h2 class="card-title">📦 交易黑匣子</h2></div>
+    <div id="blackboxPanel"></div>
+  </div>
+  <div class="card">
+    <div class="card-head"><h2 class="card-title">🔥 时段热力图</h2></div>
+    <div id="heatmapPanel"></div>
+  </div>
+</section>
+
+<!-- 游戏化面板 -->
+<section class="stats-row" style="margin-top:0">
+  <div class="card" style="grid-column:1/-1">
+    <div class="card-head"><h2 class="card-title">🎮 交易成长</h2></div>
+    <div id="gamificationPanel"></div>
   </div>
 </section>
 

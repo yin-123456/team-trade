@@ -287,12 +287,12 @@ function collectIndicatorSnapshot() {
   if (klineData.length < 2) return snap;
   var rsiArr = calcRSI(klineData, 14);
   if (rsiArr.length > 0) snap.rsi = rsiArr[rsiArr.length - 1].val;
-  var macdArr = calcMACD(klineData);
-  if (macdArr.length > 1) {
-    var last = macdArr[macdArr.length - 1];
-    var prev = macdArr[macdArr.length - 2];
-    snap.macdHist = last.hist;
-    snap.macdCross = (prev.hist <= 0 && last.hist > 0) ? 'golden' : (prev.hist >= 0 && last.hist < 0) ? 'death' : 'none';
+  var macdRes = calcMACD(klineData);
+  if (macdRes && macdRes.hist.length > 1) {
+    var last = macdRes.hist[macdRes.hist.length - 1];
+    var prev = macdRes.hist[macdRes.hist.length - 2];
+    snap.macdHist = last.val;
+    snap.macdCross = (prev.val <= 0 && last.val > 0) ? 'golden' : (prev.val >= 0 && last.val < 0) ? 'death' : 'none';
   }
   var bollArr = calcBoll(klineData, 20);
   if (bollArr.length > 0) {
@@ -321,7 +321,8 @@ function updateCostPreview() {
   var amountEl = document.getElementById('tradeAmount');
   var levSlider = document.getElementById('leverageSlider');
   var costEl = document.getElementById('estCost');
-  var feeEl = costEl ? costEl.parentElement.querySelector('.cost-line:nth-child(2) span:last-child') : null;
+  var feeEl = document.getElementById('estFee');
+  var liqEl = document.getElementById('estLiqPrice');
   if (!priceEl || !amountEl || !costEl) return;
   var price = parseFloat(priceEl.value.replace(/,/g, '')) || 0;
   var qty = parseFloat(amountEl.value) || 0;
@@ -331,6 +332,17 @@ function updateCostPreview() {
   var fee = notional * 0.0004;
   costEl.textContent = margin > 0 ? '$' + margin.toFixed(2) : '--';
   if (feeEl) feeEl.textContent = '≈ $' + fee.toFixed(2);
+  // 预估强平价
+  if (liqEl && price > 0 && lev > 0) {
+    var side = document.getElementById('btnBuy') && document.getElementById('btnBuy').classList.contains('active') ? 'long' : 'short';
+    var maintRate = 0.02;
+    var liqPrice = side === 'long'
+      ? price * (1 - 1/lev + maintRate)
+      : price * (1 + 1/lev - maintRate);
+    liqEl.textContent = qty > 0 ? '$' + formatPrice(liqPrice) : '--';
+  }
+  // 交易天平实时更新
+  updateTradeBalance();
 }
 
 function showTradeToast(title, detail, color) {
@@ -340,6 +352,25 @@ function showTradeToast(title, detail, color) {
   document.body.appendChild(toast);
   setTimeout(function() { toast.classList.add('show'); }, 10);
   setTimeout(function() { toast.classList.remove('show'); setTimeout(function() { toast.remove(); }, 300); }, 4000);
+}
+
+function updateTradeBalance() {
+  var box = document.getElementById('tradeBalanceBox');
+  if (!box || klineData.length < 20) return;
+  var side = document.getElementById('btnBuy') && document.getElementById('btnBuy').classList.contains('active') ? 'long' : 'short';
+  var snap = collectIndicatorSnapshot();
+  var bal = TTA.calcTradeBalance(currentSymbol, side, snap);
+  box.style.display = 'block';
+  var scoreEl = document.getElementById('balanceScore');
+  var prosEl = document.getElementById('balancePros');
+  var consEl = document.getElementById('balanceCons');
+  if (scoreEl) {
+    var cls = bal.recommendation === 'go' ? 'green' : bal.recommendation === 'stop' ? 'red' : 'amber';
+    scoreEl.className = 'balance-score ' + cls;
+    scoreEl.textContent = bal.score.toFixed(0) + '/100';
+  }
+  if (prosEl) prosEl.innerHTML = bal.pros.length > 0 ? bal.pros.join('<br>') : '<span class="muted">无支持信号</span>';
+  if (consEl) consEl.innerHTML = bal.cons.length > 0 ? bal.cons.join('<br>') : '<span class="muted">无反对信号</span>';
 }
 
 // ============================================================
@@ -1749,6 +1780,11 @@ function init() {
   renderQuantDashboard();
   renderSentimentPanel();
   renderShadowPanel();
+  renderPuzzlePanel();
+  renderBlackboxPanel();
+  renderRhythmPanel();
+  renderHeatmapPanel();
+  renderGamificationPanel();
 
   // Fetch initial ticker data
   fetchAllTickers(function() {
@@ -1823,6 +1859,8 @@ function init() {
 // ============================================================
 
 var tvBollUpper = null, tvBollLower = null, tvBollMid = null;
+var tvRsiChart = null, tvRsiSeries = null;
+var tvMacdChart = null, tvMacdHistSeries = null, tvMacdLineSeries = null, tvMacdSignalSeries = null;
 
 function updateChartIndicators() {
   if (!tvChart || klineData.length < 20) return;
@@ -1851,6 +1889,12 @@ function updateChartIndicators() {
 
   // 更新图表标签
   updateChartTags();
+
+  // RSI 副图
+  updateRsiSubChart();
+
+  // MACD 副图
+  updateMacdSubChart();
 }
 
 function updateChartTags() {
@@ -1867,11 +1911,11 @@ function updateChartTags() {
   }
 
   // MACD 标签
-  var macdArr = calcMACD(klineData);
-  if (macdArr.length > 0) {
-    var m = macdArr[macdArr.length - 1];
-    var mCls = m.hist > 0 ? 'green' : 'red';
-    html += '<span class="chart-tag ' + mCls + '">MACD ' + m.hist.toFixed(2) + '</span>';
+  var macdResult = calcMACD(klineData);
+  if (macdResult && macdResult.hist.length > 0) {
+    var m = macdResult.hist[macdResult.hist.length - 1];
+    var mCls = m.val > 0 ? 'green' : 'red';
+    html += '<span class="chart-tag ' + mCls + '">MACD ' + m.val.toFixed(2) + '</span>';
   }
 
   // 布林带标签
@@ -1893,9 +1937,87 @@ function updateChartTags() {
   el.innerHTML = html;
 }
 
-// ============================================================
-// 量化仪表盘 — 核心盈利指标
-// ============================================================
+// --- RSI 副图 ---
+function updateRsiSubChart() {
+  var area = document.getElementById('rsiChartArea');
+  var container = document.getElementById('rsiChart');
+  if (!area || !container) return;
+
+  if (!indicators.rsi) {
+    area.style.display = 'none';
+    return;
+  }
+  area.style.display = 'block';
+
+  var rsiArr = calcRSI(klineData, 14);
+  if (rsiArr.length === 0) return;
+
+  if (!tvRsiChart) {
+    tvRsiChart = LightweightCharts.createChart(container, {
+      width: container.clientWidth, height: 100,
+      layout: { background: { color: 'transparent' }, textColor: '#8ba3c7', fontFamily: 'Outfit' },
+      grid: { vertLines: { color: 'rgba(56,189,248,0.03)' }, horzLines: { color: 'rgba(56,189,248,0.03)' } },
+      rightPriceScale: { borderColor: 'rgba(56,189,248,0.08)', scaleMargins: { top: 0.05, bottom: 0.05 } },
+      timeScale: { visible: false }, crosshair: { mode: 0 }
+    });
+    tvRsiSeries = tvRsiChart.addLineSeries({ color: '#f59e0b', lineWidth: 1.5 });
+    window.addEventListener('resize', function() {
+      if (tvRsiChart && container) tvRsiChart.applyOptions({ width: container.clientWidth });
+    });
+  }
+
+  var data = rsiArr.map(function(p) {
+    return { time: Math.floor(klineData[p.idx].time / 1000), value: p.val };
+  });
+  tvRsiSeries.setData(data);
+}
+
+// --- MACD 副图 ---
+function updateMacdSubChart() {
+  var area = document.getElementById('macdChartArea');
+  var container = document.getElementById('macdChart');
+  if (!area || !container) return;
+
+  if (!indicators.macd) {
+    area.style.display = 'none';
+    return;
+  }
+  area.style.display = 'block';
+
+  var macdResult = calcMACD(klineData);
+  if (!macdResult || macdResult.hist.length === 0) return;
+
+  if (!tvMacdChart) {
+    tvMacdChart = LightweightCharts.createChart(container, {
+      width: container.clientWidth, height: 100,
+      layout: { background: { color: 'transparent' }, textColor: '#8ba3c7', fontFamily: 'Outfit' },
+      grid: { vertLines: { color: 'rgba(56,189,248,0.03)' }, horzLines: { color: 'rgba(56,189,248,0.03)' } },
+      rightPriceScale: { borderColor: 'rgba(56,189,248,0.08)' },
+      timeScale: { visible: false }, crosshair: { mode: 0 }
+    });
+    tvMacdHistSeries = tvMacdChart.addHistogramSeries({ priceFormat: { type: 'price', precision: 2 } });
+    tvMacdLineSeries = tvMacdChart.addLineSeries({ color: '#22d3ee', lineWidth: 1 });
+    tvMacdSignalSeries = tvMacdChart.addLineSeries({ color: '#f59e0b', lineWidth: 1 });
+    window.addEventListener('resize', function() {
+      if (tvMacdChart && container) tvMacdChart.applyOptions({ width: container.clientWidth });
+    });
+  }
+
+  var hist = [], dif = [], dea = [];
+  macdResult.hist.forEach(function(m) {
+    var t = Math.floor(klineData[m.idx].time / 1000);
+    hist.push({ time: t, value: m.val, color: m.val >= 0 ? 'rgba(34,197,94,0.6)' : 'rgba(239,68,68,0.6)' });
+  });
+  macdResult.macd.forEach(function(m) {
+    dif.push({ time: Math.floor(klineData[m.idx].time / 1000), value: m.val });
+  });
+  macdResult.signal.forEach(function(m) {
+    dea.push({ time: Math.floor(klineData[m.idx].time / 1000), value: m.val });
+  });
+  tvMacdHistSeries.setData(hist);
+  tvMacdLineSeries.setData(dif);
+  tvMacdSignalSeries.setData(dea);
+}
 
 function renderQuantDashboard() {
   var el = document.getElementById('quantDashboard');
@@ -2031,6 +2153,267 @@ function renderShadowPanel() {
     html += '</div>';
   }
 
+  el.innerHTML = html;
+}
+
+// ============================================================
+// 交易拼图 — 每笔交易7维评分
+// ============================================================
+
+function renderPuzzlePanel() {
+  var el = document.getElementById('puzzlePanel');
+  if (!el) return;
+  var journal = loadJournal();
+  var closed = journal.filter(function(e) { return e.status === 'closed'; }).slice(0, 8);
+
+  if (closed.length === 0) {
+    el.innerHTML = '<div class="quant-empty">暂无已平仓交易</div>';
+    return;
+  }
+
+  var html = '';
+  closed.forEach(function(trade) {
+    var puzzle = TTA.calcTradePuzzle(trade, klineData);
+    var pCls = trade.pnl >= 0 ? 'green' : 'red';
+    html += '<div class="puzzle-row">';
+    html += '<div class="puzzle-head">';
+    html += '<span>' + (trade.side === 'long' ? '▲' : '▼') + ' ' + (trade.symbol || currentSymbol) + '</span>';
+    html += '<span class="' + pCls + '">' + (trade.pnl >= 0 ? '+' : '') + '$' + (trade.pnl || 0).toFixed(2) + '</span>';
+    html += '<span class="puzzle-score">' + puzzle.score + '/7</span>';
+    html += '</div>';
+    html += '<div class="puzzle-pieces">';
+    puzzle.pieces.forEach(function(p) {
+      html += '<span class="puzzle-piece ' + (p.ok ? 'ok' : 'fail') + '">' + p.name + '</span>';
+    });
+    html += '</div></div>';
+  });
+  el.innerHTML = html;
+}
+
+// ============================================================
+// 交易黑匣子 — 亏损复盘分析
+// ============================================================
+
+function renderBlackboxPanel() {
+  var el = document.getElementById('blackboxPanel');
+  if (!el) return;
+  var journal = loadJournal();
+  var losses = journal.filter(function(e) {
+    return e.status === 'closed' && (e.pnl || 0) < 0;
+  }).slice(0, 6);
+
+  if (losses.length === 0) {
+    el.innerHTML = '<div class="quant-empty">暂无亏损记录 🎉</div>';
+    return;
+  }
+
+  // 分析亏损模式
+  var patterns = {};
+  losses.forEach(function(t) {
+    var lev = parseFloat(t.leverage) || 1;
+    if (lev >= 10) patterns['高杠杆'] = (patterns['高杠杆'] || 0) + 1;
+    if (t.side === 'long') patterns['做多亏损'] = (patterns['做多亏损'] || 0) + 1;
+    else patterns['做空亏损'] = (patterns['做空亏损'] || 0) + 1;
+  });
+
+  var html = '<div class="bb-patterns">';
+  Object.keys(patterns).forEach(function(k) {
+    html += '<span class="bb-tag">' + k + ' ×' + patterns[k] + '</span>';
+  });
+  html += '</div>';
+
+  var totalLoss = losses.reduce(function(s, t) { return s + Math.abs(t.pnl || 0); }, 0);
+  html += '<div class="bb-total">总亏损 <span class="red">-$' + totalLoss.toFixed(2) + '</span></div>';
+
+  losses.forEach(function(t) {
+    html += '<div class="bb-row">';
+    html += '<span>' + (t.side === 'long' ? '▲' : '▼') + ' ' + (t.symbol || '--') + '</span>';
+    html += '<span class="red">-$' + Math.abs(t.pnl || 0).toFixed(2) + '</span>';
+    html += '<span>' + (t.leverage || 1) + 'x</span>';
+    html += '</div>';
+  });
+
+  el.innerHTML = html;
+}
+
+// ============================================================
+// 节奏大师 — 最佳交易频率分析
+// ============================================================
+
+function renderRhythmPanel() {
+  var el = document.getElementById('rhythmPanel');
+  if (!el) return;
+  var html = '';
+
+  TEAM.forEach(function(m) {
+    var trades = TT.getTrades({ member: m.name });
+    if (trades.length < 3) return;
+
+    // 计算交易间隔
+    var gaps = [];
+    for (var i = 1; i < trades.length; i++) {
+      var gap = Math.abs(new Date(trades[i-1].timestamp) - new Date(trades[i].timestamp));
+      gaps.push({ gap: gap, pnl: trades[i].pnl || 0 });
+    }
+
+    // 按间隔分桶
+    var buckets = { '急(<3m)': { pnl: 0, count: 0 }, '快(3-15m)': { pnl: 0, count: 0 }, '中(15m-1h)': { pnl: 0, count: 0 }, '慢(>1h)': { pnl: 0, count: 0 } };
+    gaps.forEach(function(g) {
+      var min = g.gap / 60000;
+      var key = min < 3 ? '急(<3m)' : min < 15 ? '快(3-15m)' : min < 60 ? '中(15m-1h)' : '慢(>1h)';
+      buckets[key].pnl += g.pnl;
+      buckets[key].count++;
+    });
+
+    html += '<div class="rhythm-member">';
+    html += '<div class="quant-header"><span class="pos-avatar" style="background:' + m.color + ';width:24px;height:24px;font-size:10px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%">' + m.init + '</span><span class="quant-name">' + m.name + '</span></div>';
+    html += '<div class="rhythm-grid">';
+    Object.keys(buckets).forEach(function(k) {
+      var b = buckets[k];
+      var cls = b.pnl > 0 ? 'green' : b.pnl < 0 ? 'red' : '';
+      html += '<div class="rhythm-cell"><div class="rhythm-label">' + k + '</div>';
+      html += '<div class="rhythm-count">' + b.count + '笔</div>';
+      html += '<div class="rhythm-pnl ' + cls + '">' + (b.pnl >= 0 ? '+' : '') + '$' + b.pnl.toFixed(2) + '</div></div>';
+    });
+    html += '</div></div>';
+  });
+
+  el.innerHTML = html || '<div class="quant-empty">暂无数据</div>';
+}
+
+// ============================================================
+// 时段热力图
+// ============================================================
+
+function renderHeatmapPanel() {
+  var el = document.getElementById('heatmapPanel');
+  if (!el) return;
+  var member = TEAM[0]; // 默认第一个成员
+  var hm = TTA.calcTimeHeatmap(member.name);
+  if (!hm || Object.keys(hm.map).length === 0) {
+    el.innerHTML = '<div class="quant-empty">暂无数据</div>';
+    return;
+  }
+
+  var hours = [0, 3, 6, 9, 12, 15, 18, 21];
+  var html = '<div class="hm-grid">';
+  html += '<div class="hm-corner"></div>';
+  hours.forEach(function(h) {
+    html += '<div class="hm-head">' + h + ':00</div>';
+  });
+
+  for (var d = 0; d < 7; d++) {
+    html += '<div class="hm-day">' + hm.days[d] + '</div>';
+    hours.forEach(function(h) {
+      var key = d + '_' + h;
+      var cell = hm.map[key];
+      if (cell) {
+        var intensity = Math.min(1, Math.abs(cell.pnl) / 50);
+        var bg = cell.pnl >= 0
+          ? 'rgba(34,197,94,' + (0.1 + intensity * 0.6) + ')'
+          : 'rgba(239,68,68,' + (0.1 + intensity * 0.6) + ')';
+        html += '<div class="hm-cell" style="background:' + bg + '" title="' + cell.count + '笔 $' + cell.pnl.toFixed(2) + '">' + cell.count + '</div>';
+      } else {
+        html += '<div class="hm-cell"></div>';
+      }
+    });
+  }
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+// ============================================================
+// 游戏化引擎 — EXP/等级/成就/每日任务
+// ============================================================
+
+var GAME_CONFIG = {
+  levels: [0,100,300,600,1000,1500,2200,3000,4000,5500,7500,10000,13000,17000,22000,28000,35000,43000,52000,65000],
+  achievements: {
+    '首笔交易': { desc: '完成第一笔交易', check: function(s) { return s.totalTrades >= 1; } },
+    '十连斩': { desc: '累计10笔交易', check: function(s) { return s.totalTrades >= 10; } },
+    '百战老兵': { desc: '累计100笔交易', check: function(s) { return s.totalTrades >= 100; } },
+    '神枪手': { desc: '胜率超过60%', check: function(s) { return s.winRate > 60 && s.totalTrades >= 10; } },
+    '稳如泰山': { desc: '连续5笔盈利', check: function(s) { return s.maxConsecWin >= 5; } },
+    '风控达人': { desc: '最大回撤<5%', check: function(s) { return s.maxDrawdown < 5 && s.totalTrades >= 10; } },
+    '冷静杀手': { desc: '无冲动交易(10笔内)', check: function(s) { return s.impulseCount === 0 && s.totalTrades >= 10; } },
+    '万元户': { desc: '累计盈利超$10000', check: function(s) { return s.totalPnl >= 10000; } }
+  }
+};
+
+function calcGameStats(memberName) {
+  var trades = TT.getTrades({ member: memberName });
+  var closed = trades.filter(function(t) { return t.type === 'close' || t.type === 'liquidation'; });
+  var totalPnl = 0, wins = 0, maxConsecWin = 0, curWin = 0;
+  closed.forEach(function(t) {
+    totalPnl += t.pnl || 0;
+    if (t.pnl > 0) { wins++; curWin++; maxConsecWin = Math.max(maxConsecWin, curWin); }
+    else curWin = 0;
+  });
+  var impulse = TTA.detectImpulseTrades(memberName);
+  return {
+    totalTrades: trades.length,
+    closedTrades: closed.length,
+    totalPnl: totalPnl,
+    winRate: closed.length > 0 ? wins / closed.length * 100 : 0,
+    maxConsecWin: maxConsecWin,
+    maxDrawdown: 0,
+    impulseCount: impulse.impulseCount
+  };
+}
+
+function calcEXP(memberName) {
+  var stats = calcGameStats(memberName);
+  var exp = 0;
+  exp += stats.totalTrades * 10;
+  exp += stats.closedTrades * 5;
+  if (stats.winRate > 50) exp += Math.floor(stats.winRate) * 2;
+  if (stats.totalPnl > 0) exp += Math.floor(stats.totalPnl);
+  return Math.max(0, exp);
+}
+
+function getLevel(exp) {
+  for (var i = GAME_CONFIG.levels.length - 1; i >= 0; i--) {
+    if (exp >= GAME_CONFIG.levels[i]) return { level: i + 1, exp: exp, nextExp: GAME_CONFIG.levels[i+1] || exp, curLevelExp: GAME_CONFIG.levels[i] };
+  }
+  return { level: 1, exp: 0, nextExp: 100, curLevelExp: 0 };
+}
+
+function renderGamificationPanel() {
+  var el = document.getElementById('gamificationPanel');
+  if (!el) return;
+  var html = '<div class="game-members">';
+
+  TEAM.forEach(function(m) {
+    var exp = calcEXP(m.name);
+    var lv = getLevel(exp);
+    var stats = calcGameStats(m.name);
+    var pct = lv.nextExp > lv.curLevelExp ? ((exp - lv.curLevelExp) / (lv.nextExp - lv.curLevelExp) * 100) : 100;
+
+    html += '<div class="game-member">';
+    html += '<div class="game-header">';
+    html += '<span class="pos-avatar" style="background:' + m.color + ';width:28px;height:28px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%">' + m.init + '</span>';
+    html += '<span class="game-name">' + m.name + '</span>';
+    html += '<span class="game-lv">Lv.' + lv.level + '</span>';
+    html += '</div>';
+    // EXP 进度条
+    html += '<div class="game-exp-wrap">';
+    html += '<div class="game-exp-bar" style="width:' + pct.toFixed(0) + '%"></div>';
+    html += '</div>';
+    html += '<div class="game-exp-text">' + exp + ' / ' + lv.nextExp + ' EXP</div>';
+    // 成就
+    var unlocked = [];
+    Object.keys(GAME_CONFIG.achievements).forEach(function(k) {
+      if (GAME_CONFIG.achievements[k].check(stats)) unlocked.push(k);
+    });
+    if (unlocked.length > 0) {
+      html += '<div class="game-badges">';
+      unlocked.forEach(function(b) { html += '<span class="game-badge">🏅 ' + b + '</span>'; });
+      html += '</div>';
+    }
+    html += '</div>';
+  });
+
+  html += '</div>';
   el.innerHTML = html;
 }
 

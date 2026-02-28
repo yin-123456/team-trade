@@ -1535,6 +1535,214 @@ body {
 /* ===== 颜色辅助 ===== */
 .amber { color: #f59e0b; }
 
+/* ===== 副图区域 ===== */
+.sub-chart-area {
+  border-top: 1px solid rgba(56,189,248,0.06);
+  padding: 4px 0 0;
+}
+.sub-chart-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  padding: 0 12px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.sub-chart { width: 100%; height: 100px; }
+
+/* ===== 交易天平 ===== */
+.balance-box {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(56,189,248,0.03);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(56,189,248,0.06);
+}
+.balance-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.balance-title { font-size: 0.75rem; font-weight: 600; }
+.balance-score { font-size: 0.8rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+.balance-body { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.balance-col { font-size: 0.7rem; line-height: 1.6; }
+.balance-col.pros { color: var(--green); }
+.balance-col.cons { color: var(--red); }
+.balance-col .muted { color: var(--text-muted); }
+
+/* ===== 交易拼图 ===== */
+.puzzle-row {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(56,189,248,0.06);
+}
+.puzzle-row:last-child { border-bottom: none; }
+.puzzle-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  margin-bottom: 4px;
+}
+.puzzle-score {
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  color: #22d3ee;
+}
+.puzzle-pieces { display: flex; flex-wrap: wrap; gap: 4px; }
+.puzzle-piece {
+  padding: 2px 6px;
+  font-size: 0.62rem;
+  border-radius: 8px;
+  border: 1px solid rgba(56,189,248,0.1);
+}
+.puzzle-piece.ok {
+  background: rgba(34,197,94,0.1);
+  color: var(--green);
+  border-color: rgba(34,197,94,0.2);
+}
+.puzzle-piece.fail {
+  background: rgba(239,68,68,0.08);
+  color: var(--red);
+  border-color: rgba(239,68,68,0.15);
+}
+
+/* ===== 黑匣子 ===== */
+.bb-patterns { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; }
+.bb-tag {
+  padding: 2px 8px;
+  font-size: 0.68rem;
+  background: rgba(239,68,68,0.08);
+  color: var(--red);
+  border-radius: 8px;
+}
+.bb-total {
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(56,189,248,0.06);
+}
+.bb-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  border-bottom: 1px solid rgba(56,189,248,0.03);
+}
+
+/* ===== 节奏大师 ===== */
+.rhythm-member {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(56,189,248,0.06);
+}
+.rhythm-member:last-child { border-bottom: none; }
+.rhythm-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 6px;
+}
+.rhythm-cell {
+  text-align: center;
+  padding: 6px 4px;
+  background: rgba(56,189,248,0.03);
+  border-radius: var(--radius-sm);
+}
+.rhythm-label { font-size: 0.62rem; color: var(--text-muted); }
+.rhythm-count { font-size: 0.72rem; font-weight: 600; margin: 2px 0; }
+.rhythm-pnl { font-size: 0.68rem; font-family: 'JetBrains Mono', monospace; }
+
+/* ===== 热力图 ===== */
+.hm-grid {
+  display: grid;
+  grid-template-columns: 32px repeat(8, 1fr);
+  gap: 2px;
+  padding: 8px 12px;
+}
+.hm-corner { }
+.hm-head {
+  font-size: 0.58rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 2px 0;
+}
+.hm-day {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.hm-cell {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.58rem;
+  border-radius: 3px;
+  background: rgba(56,189,248,0.03);
+  cursor: default;
+}
+
+/* ===== 游戏化面板 ===== */
+.game-members {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  padding: 12px;
+}
+.game-member {
+  padding: 10px;
+  background: rgba(56,189,248,0.03);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(56,189,248,0.06);
+}
+.game-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.game-name { font-size: 0.8rem; font-weight: 600; }
+.game-lv {
+  margin-left: auto;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #f59e0b;
+  font-family: 'JetBrains Mono', monospace;
+}
+.game-exp-wrap {
+  height: 4px;
+  background: rgba(56,189,248,0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.game-exp-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #f59e0b, #22d3ee);
+  border-radius: 2px;
+  transition: width 0.6s ease;
+}
+.game-exp-text {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  margin-top: 3px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.game-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.game-badge {
+  padding: 1px 6px;
+  font-size: 0.58rem;
+  background: rgba(245,158,11,0.1);
+  color: #f59e0b;
+  border-radius: 8px;
+  border: 1px solid rgba(245,158,11,0.2);
+}
+
 /* ===== Responsive: Tablet ===== */
 @media (max-width: 1024px) {
   .main-grid { grid-template-columns: 1fr; }
